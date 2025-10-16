@@ -216,7 +216,7 @@ st.markdown(
 
 # --- Interface principale ---
 st.set_page_config(page_title="Enseigner et évaluer en 1P-2P", layout="wide")
-st.title("📚 Enseigner & Évaluer en 1P-2P")
+st.title("📚 appRENTISSAGE en 1P-2P")
 
 # --- Formulaire d’observation dynamique ---
 for domaine, data in domaines.items():
@@ -227,15 +227,15 @@ for domaine, data in domaines.items():
                 for crit_name, detail in criteres.items():
                     with st.expander(f"🔹 **Critère : {crit_name}**", expanded=False):
                         
-                        # Compétences transversales & processus cognitifs
-                        st.markdown("### 🧠 Compétences transversales & Processus cognitifs")
-                        st.markdown(f"- **Compétences transversales** : {', '.join(detail['compétences_transversales'])}")
-                        st.markdown(f"- **Processus cognitifs** : {', '.join(detail['processus_cognitifs'])}")
-                        st.markdown("---")
+                        # Section déplacée dans l'onglet Enseigner
 
                         tab_enseigner, tab_evaluer = st.tabs(["Enseigner", "Évaluer"])
 
                         with tab_enseigner:
+                            st.markdown("### 🧠 Compétences transversales & Processus cognitifs")
+                            st.markdown(f"- **Compétences transversales** : {', '.join(detail['compétences_transversales'])}")
+                            st.markdown(f"- **Processus cognitifs** : {', '.join(detail['processus_cognitifs'])}")
+                            st.markdown("---")
                             st.markdown("### 🎯 Idées d’activités pédagogiques")
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
                             for ctx in contextes:
@@ -258,12 +258,14 @@ for domaine, data in domaines.items():
                             selected_observables = []
                             for obs in observables:
                                 st.markdown(f"**{obs}**")
-                                value = st.select_slider(
-                                    "",
-                                    options=scale_options,
-                                    key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating",
-                                    label_visibility="collapsed"
-                                )
+                                slider_col, _ = st.columns([4, 8])
+                                with slider_col:
+                                    value = st.select_slider(
+                                        "",
+                                        options=scale_options,
+                                        key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating",
+                                        label_visibility="collapsed"
+                                    )
                                 apply_mode = st.selectbox(
                                     "Appliquer à",
                                     ("Toute la classe", "Élèves particuliers"),
@@ -292,9 +294,19 @@ for domaine, data in domaines.items():
                                     for eleve in st.session_state[list_key]:
                                         selected_observables.append(f"{eleve}: {value} - {obs}")
 
-                            # Commentaire
+                            # Commentaire (placé avant la section Mise en avant)
                             comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
                             commentaire = st.text_input("Commentaire (facultatif)", key=comment_key)
+
+                            # Mise en avant: compétences transversales et processus cognitifs
+                            st.markdown("---")
+                            st.markdown("### 🌟 Compétences transversales et processus cognitifs mis en avant")
+                            comp_options = ["—"] + detail["compétences_transversales"]
+                            proc_options = ["—"] + detail["processus_cognitifs"]
+                            comp_key = f"comp_select_{domaine}_{comp_name}_{crit_name}"
+                            proc_key = f"proc_select_{domaine}_{comp_name}_{crit_name}"
+                            comp_selected = st.selectbox("Compétence transversale", comp_options, key=comp_key)
+                            proc_selected = st.selectbox("Processus cognitif", proc_options, key=proc_key)
 
                             # Bouton de validation
                             if st.button("✅ Valider cette observation", key=f"valider_{domaine}_{comp_name}_{crit_name}"):
@@ -305,7 +317,9 @@ for domaine, data in domaines.items():
                                         "Critère": crit_name,
                                         "Mode": "Selon sélection (classe/élèves)",
                                         "Observables": selected_observables.copy(),
-                                        "Commentaire": commentaire or ""
+                                        "Commentaire": commentaire or "",
+                                        "Compétence_mise_en_avant": (comp_selected if comp_selected != "—" else ""),
+                                        "Processus_mis_en_avant": (proc_selected if proc_selected != "—" else "")
                                     }
                                     st.session_state.observations.append(obs_entry)
                                     st.success("Observation enregistrée !")
@@ -323,6 +337,12 @@ with st.sidebar:
                         st.markdown(f"- {o}")
                     if obs["Commentaire"]:
                         st.markdown(f"**Commentaire** : {obs['Commentaire']}")
+                    if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
+                        st.markdown("**Mise en avant** :")
+                        if obs.get("Compétence_mise_en_avant"):
+                            st.markdown(f"- Compétence transversale : {obs['Compétence_mise_en_avant']}")
+                        if obs.get("Processus_mis_en_avant"):
+                            st.markdown(f"- Processus cognitif : {obs['Processus_mis_en_avant']}")
             
             # Génération et téléchargement PDF
             pdf_buffer = BytesIO()
@@ -358,6 +378,14 @@ with st.sidebar:
                 pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Observables: {', '.join(obs['Observables'])}", align='L')
                 if obs["Commentaire"]:
                     pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Commentaire: {obs['Commentaire']}", align='L')
+                # Section mise en avant
+                if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
+                    pdf.ln(2)
+                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, "Mise en avant:", align='L')
+                    if obs.get("Compétence_mise_en_avant"):
+                        pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"- Compétence transversale: {obs['Compétence_mise_en_avant']}", align='L')
+                    if obs.get("Processus_mis_en_avant"):
+                        pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"- Processus cognitif: {obs['Processus_mis_en_avant']}", align='L')
                 pdf.ln(5)
 
             pdf_output = bytes(pdf.output(dest='S'))
