@@ -201,70 +201,71 @@ for domaine, data in domaines.items():
                         st.markdown(f"- **Processus cognitifs** : {', '.join(detail['processus_cognitifs'])}")
                         st.markdown("---")
 
-                        # Activités pédagogiques
-                        st.markdown("### 🎯 Idées d’activités pédagogiques")
-                        contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
-                        for ctx in contextes:
-                            if ctx in detail["Activités par contexte"]:
-                                activites = detail["Activités par contexte"][ctx]
-                                st.markdown(f"**{ctx} :**")
-                                for act in activites:
-                                    st.markdown(f"- {act}")
-                        st.markdown("---")
+                        tab_enseigner, tab_evaluer = st.tabs(["Enseigner", "Évaluer"])
 
-                        # Observables
-                        st.markdown("### 👀 Observables à évaluer")
-                        observables = detail["Observables"]
+                        with tab_enseigner:
+                            st.markdown("### 🎯 Idées d’activités pédagogiques")
+                            contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
+                            for ctx in contextes:
+                                if ctx in detail["Activités par contexte"]:
+                                    activites = detail["Activités par contexte"][ctx]
+                                    st.markdown(f"**{ctx} :**")
+                                    for act in activites:
+                                        st.markdown(f"- {act}")
 
-                        # Choix dynamique : classe entière ou élèves
-                        mode_obs = st.radio(
-                            "Mode d’observation",
-                            ("Toute la classe", "Élèves sélectionnés"),
-                            key=f"mode_{domaine}_{comp_name}_{crit_name}",
-                            horizontal=True
-                        )
+                        with tab_evaluer:
+                            st.markdown("### 👀 Observables à évaluer")
+                            observables = detail["Observables"]
 
-                        eleves_a_observer = []
-                        if mode_obs == "Élèves sélectionnés":
-                            eleves_input = st.text_input(
-                                "Liste des élèves (séparés par des virgules)",
-                                key=f"eleves_{domaine}_{comp_name}_{crit_name}"
+                            # Choix dynamique : classe entière ou élèves
+                            mode_obs = st.radio(
+                                "Mode d’observation",
+                                ("Toute la classe", "Élèves sélectionnés"),
+                                key=f"mode_{domaine}_{comp_name}_{crit_name}",
+                                horizontal=True
                             )
-                            if eleves_input:
-                                eleves_a_observer = [e.strip() for e in eleves_input.split(",") if e.strip()]
-                        else:
-                            eleves_a_observer = ["Toute la classe"]
 
-                        # Affichage des checkboxes
-                        selected_observables = []
-                        if mode_obs == "Toute la classe":
-                            for obs in observables:
-                                if st.checkbox(obs, key=f"classe_{domaine}_{comp_name}_{crit_name}_{obs}"):
-                                    selected_observables.append(obs)
-                        else:
-                            for obs in observables:
-                                st.markdown(f"**{obs}**")
-                                for eleve in eleves_a_observer:
-                                    if st.checkbox(eleve, key=f"eleve_{domaine}_{comp_name}_{crit_name}_{obs}_{eleve}"):
-                                        selected_observables.append(f"{eleve}: {obs}")
+                            eleves_a_observer = []
+                            if mode_obs == "Élèves sélectionnés":
+                                eleves_input = st.text_input(
+                                    "Liste des élèves (séparés par des virgules)",
+                                    key=f"eleves_{domaine}_{comp_name}_{crit_name}"
+                                )
+                                if eleves_input:
+                                    eleves_a_observer = [e.strip() for e in eleves_input.split(",") if e.strip()]
+                            else:
+                                eleves_a_observer = ["Toute la classe"]
 
-                        # Commentaire
-                        comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
-                        commentaire = st.text_input("Commentaire (facultatif)", key=comment_key)
+                            # Affichage des checkboxes
+                            selected_observables = []
+                            if mode_obs == "Toute la classe":
+                                for obs in observables:
+                                    if st.checkbox(obs, key=f"classe_{domaine}_{comp_name}_{crit_name}_{obs}"):
+                                        selected_observables.append(obs)
+                            else:
+                                for obs in observables:
+                                    st.markdown(f"**{obs}**")
+                                    for eleve in eleves_a_observer:
+                                        if st.checkbox(eleve, key=f"eleve_{domaine}_{comp_name}_{crit_name}_{obs}_{eleve}"):
+                                            selected_observables.append(f"{eleve}: {obs}")
 
-                        # Bouton de validation
-                        if st.button("✅ Valider cette observation", key=f"valider_{domaine}_{comp_name}_{crit_name}"):
-                            if selected_observables:
-                                obs_entry = {
-                                    "Domaine": domaine,
-                                    "Composante": comp_name,
-                                    "Critère": crit_name,
-                                    "Mode": mode_obs,
-                                    "Observables": selected_observables.copy(),
-                                    "Commentaire": commentaire or ""
-                                }
-                                st.session_state.observations.append(obs_entry)
-                                st.success("Observation enregistrée !")
+                            # Commentaire
+                            comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
+                            commentaire = st.text_input("Commentaire (facultatif)", key=comment_key)
+
+                            # Bouton de validation
+                            if st.button("✅ Valider cette observation", key=f"valider_{domaine}_{comp_name}_{crit_name}"):
+                                if selected_observables:
+                                    obs_entry = {
+                                        "Domaine": domaine,
+                                        "Composante": comp_name,
+                                        "Critère": crit_name,
+                                        "Mode": mode_obs,
+                                        "Observables": selected_observables.copy(),
+                                        "Commentaire": commentaire or ""
+                                    }
+                                    st.session_state.observations.append(obs_entry)
+                                    st.success("Observation enregistrée !")
 
 # --- Sidebar dynamique ---
 with st.sidebar:
