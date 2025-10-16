@@ -190,7 +190,7 @@ st.markdown(
     .stTabs [data-baseweb="tab"] > div,
     .stTabs [data-baseweb="tab"] > div > div {
         font-family: inherit !important;
-        font-size: 1.8rem !important;
+        font-size: 1.2rem !important;
         line-height: 1.2 !important;
         font-weight: 1000 !important;
     }
@@ -224,7 +224,7 @@ st.markdown(
 )
 
 # --- Interface principale ---
-st.set_page_config(page_title="*app*RENDRE en 1P-2P", layout="wide")
+st.set_page_config(page_title="appRENDRE en 1P-2P", layout="wide")
 st.title("📚 *app*RENDRE en 1P-2P")
 
 # --- Formulaire d’observation dynamique ---
@@ -241,10 +241,11 @@ for domaine, data in domaines.items():
                         tab_enseigner, tab_evaluer = st.tabs(["🧑‍🏫 Enseigner", "👀 Évaluer"])
 
                         with tab_enseigner:
-                            st.markdown("### 🧠 Compétences transversales & Processus cognitifs")
+
+                            st.markdown("#### 🧠 Compétences transversales & Processus cognitifs")
                             st.markdown(f"- **Compétences transversales mobilisables** : {', '.join(detail['compétences_transversales'])}")
                             st.markdown(f"- **Processus cognitifs mobilisables** : {', '.join(detail['processus_cognitifs'])}")
-                            st.markdown("### 🎯 Idées d’activités pédagogiques")
+                            st.markdown("#### 🎯 Idées d'activités pédagogiques")
                             # Espace visuel avant les onglets de lieux
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
                             icones_contextes = {
