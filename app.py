@@ -222,6 +222,25 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Style spécifique: onglets des lieux (ctx-tabs-marker)
+st.markdown(
+    """
+    <style>
+    .ctx-tabs-marker + div.stTabs [data-baseweb="tab"],
+    .ctx-tabs-marker + div.stTabs [data-baseweb="tab"] > div,
+    .ctx-tabs-marker + div.stTabs [data-baseweb="tab"] > div > div {
+        font-size: 0.5rem !important; /* légèrement plus petit */
+        font-weight: 700 !important;
+    }
+    .ctx-tabs-marker + div.stTabs [data-baseweb="tab"] > div {
+        padding: 4px 0;
+        min-height: 30px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- Interface principale ---
 st.set_page_config(page_title="*app*RENDRE en 1P-2P", layout="wide")
 st.title("📚 *app*RENDRE en 1P-2P")
@@ -237,25 +256,34 @@ for domaine, data in domaines.items():
                         
                         # Section déplacée dans l'onglet Enseigner
 
-                        tab_enseigner, tab_evaluer = st.tabs(["🧑‍🏫 ENSEIGNER", "👀 ÉVALUER"])
+                        tab_enseigner, tab_evaluer = st.tabs(["🧑‍🏫 Enseigner", "👀 Évaluer"])
 
                         with tab_enseigner:
-                            st.header("🧑‍🏫 Enseigner")
                             st.markdown("### 🧠 Compétences transversales & Processus cognitifs")
                             st.markdown(f"- **Compétences transversales mobilisables** : {', '.join(detail['compétences_transversales'])}")
                             st.markdown(f"- **Processus cognitifs mobilisables** : {', '.join(detail['processus_cognitifs'])}")
-                            st.markdown("---")
                             st.markdown("### 🎯 Idées d’activités pédagogiques")
+                            # Espace visuel avant les onglets de lieux
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
-                            for ctx in contextes:
-                                if ctx in detail["Activités par contexte"]:
-                                    activites = detail["Activités par contexte"][ctx]
-                                    st.markdown(f"**{ctx} :**")
-                                    for act in activites:
-                                        st.markdown(f"- {act}")
+                            icones_contextes = {
+                                "En classe": "🏫",
+                                "Sur le banc": "🪑",
+                                "Jeu à faire semblant": "🧸",
+                                "Dehors": "🌳",
+                                "Autres": "💡"
+                            }
+                            contextes_disponibles = [c for c in contextes if c in detail.get("Activités par contexte", {})]
+                            if contextes_disponibles:
+                                # Marqueur pour cibler uniquement ces onglets via CSS
+                                st.markdown("<div class='ctx-tabs-marker'></div>", unsafe_allow_html=True)
+                                tabs_ctx = st.tabs([f"{icones_contextes.get(c, '•')} {c}" for c in contextes_disponibles])
+                                for t, c in zip(tabs_ctx, contextes_disponibles):
+                                    with t:
+                                        activites = detail["Activités par contexte"][c]
+                                        for act in activites:
+                                            st.markdown(f"- {act}")
 
                         with tab_evaluer:
-                            st.header("👀 Évaluer")
                             st.subheader("Observables")
                             observables = detail["Observables"]
 
