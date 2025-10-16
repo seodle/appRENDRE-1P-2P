@@ -192,6 +192,28 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# --- Styles des onglets : plus grands et 50% de largeur chacun ---
+st.markdown(
+    """
+    <style>
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        flex: 1 1 50%;
+        max-width: 50%;
+    }
+    .stTabs [data-baseweb="tab"] > div {
+        font-size: 2rem;
+        padding: 10px 0;
+        font-weight: 800;
+        justify-content: center;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- Interface principale ---
 st.set_page_config(page_title="Enseigner et évaluer en 1P-2P", layout="wide")
 st.title("📚 Enseigner & Évaluer en 1P-2P")
