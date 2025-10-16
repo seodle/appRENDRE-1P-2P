@@ -1,6 +1,7 @@
 import streamlit as st
 from fpdf import FPDF
 from io import BytesIO
+from datetime import datetime
 
 # --- Données enrichies avec les 7 domaines, compétences transversales et processus cognitifs ---
 domaines = {
@@ -279,47 +280,51 @@ with st.sidebar:
                     if obs["Commentaire"]:
                         st.markdown(f"**Commentaire** : {obs['Commentaire']}")
             
-            # Génération PDF
-            if st.button("📄 Générer le rapport PDF"):
-                pdf_buffer = BytesIO()
-                pdf = FPDF()
-                pdf.set_auto_page_break(auto=True, margin=15)
-                pdf.set_margins(15, 15, 15)
-                # Fonts: try Unicode TrueType to support accents, guillemets, ≥, …
-                try:
-                    pdf.add_font("ArialUnicode", "", "C:\\Windows\\Fonts\\arial.ttf", uni=True)
-                    pdf.add_font("ArialUnicode", "B", "C:\\Windows\\Fonts\\arialbd.ttf", uni=True)
-                    base_font = "ArialUnicode"
-                except Exception:
-                    # Fallback to core font if system fonts are unavailable
-                    base_font = "Helvetica"
-                pdf.add_page()
-                pdf.set_font(base_font, "B", 16)
-                pdf.cell(0, 10, "Rapport de la séance", ln=True, align="C")
-                pdf.ln(10)
+            # Génération et téléchargement PDF
+            pdf_buffer = BytesIO()
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.set_margins(15, 15, 15)
+            # Fonts: try Unicode TrueType to support accents, guillemets, ≥, …
+            try:
+                pdf.add_font("ArialUnicode", "", "C:\\Windows\\Fonts\\arial.ttf", uni=True)
+                pdf.add_font("ArialUnicode", "B", "C:\\Windows\\Fonts\\arialbd.ttf", uni=True)
+                base_font = "ArialUnicode"
+            except Exception:
+                # Fallback to core font if system fonts are unavailable
+                base_font = "Helvetica"
+            pdf.add_page()
+            pdf.set_font(base_font, "B", 16)
+            pdf.cell(0, 10, "Rapport de la séance", ln=True, align="C")
+            pdf.ln(10)
 
-                pdf.set_font(base_font, "", 12)
-                pdf.set_x(pdf.l_margin)
-                content_width = getattr(pdf, "epw", pdf.w - pdf.l_margin - pdf.r_margin)
-                for obs in st.session_state.observations:
-                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Domaine: {obs['Domaine']}", align='L')
-                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Composante: {obs['Composante']}", align='L')
-                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Critère: {obs['Critère']}", align='L')
-                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Mode: {obs['Mode']}", align='L')
-                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Observables: {', '.join(obs['Observables'])}", align='L')
-                    if obs["Commentaire"]:
-                        pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Commentaire: {obs['Commentaire']}", align='L')
-                    pdf.ln(5)
+            pdf.set_font(base_font, "", 12)
+            pdf.set_x(pdf.l_margin)
+            content_width = getattr(pdf, "epw", pdf.w - pdf.l_margin - pdf.r_margin)
+            # Date du rapport
+            date_str = datetime.now().strftime("%d/%m/%Y")
+            date_filename = datetime.now().strftime("%Y-%m-%d")
+            pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Date: {date_str}", align='L')
+            pdf.ln(5)
+            for obs in st.session_state.observations:
+                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Domaine: {obs['Domaine']}", align='L')
+                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Composante: {obs['Composante']}", align='L')
+                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Critère: {obs['Critère']}", align='L')
+                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Mode: {obs['Mode']}", align='L')
+                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Observables: {', '.join(obs['Observables'])}", align='L')
+                if obs["Commentaire"]:
+                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Commentaire: {obs['Commentaire']}", align='L')
+                pdf.ln(5)
 
-                pdf_output = bytes(pdf.output(dest='S'))
-                pdf_buffer.write(pdf_output)
-                pdf_buffer.seek(0)
+            pdf_output = bytes(pdf.output(dest='S'))
+            pdf_buffer.write(pdf_output)
+            pdf_buffer.seek(0)
 
-                st.download_button(
-                    label="⬇️ Télécharger le rapport PDF",
-                    data=pdf_buffer,
-                    file_name="rapport_seance.pdf",
-                    mime="application/pdf"
-                )
+            st.download_button(
+                label="Télécharger le rapport PDF",
+                data=pdf_buffer,
+                file_name=f"rapport_seance_{date_filename}.pdf",
+                mime="application/pdf"
+            )
         else:
             st.info("Aucune observation validée pour l’instant.")
