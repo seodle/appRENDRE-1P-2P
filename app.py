@@ -100,6 +100,25 @@ class CustomPDF(FPDF):
                 labels = ["1", "2", "3"]
                 self.cell(box_w, 6, labels[i], align="C")
 
+    def calculate_multicell_height(self, text: str, width: float, line_height: float) -> float:
+        # Approximate height of a multicell for current font settings
+        total_lines = 0
+        for paragraph in str(text).split("\n"):
+            if not paragraph:
+                total_lines += 1
+                continue
+            current_line = ""
+            for word in paragraph.split(" "):
+                test = (current_line + (" " if current_line else "") + word).strip()
+                if self.get_string_width(test) <= width:
+                    current_line = test
+                else:
+                    total_lines += 1
+                    current_line = word
+            if current_line:
+                total_lines += 1
+        return max(line_height, total_lines * line_height)
+
     def header(self):
         if not self.first_page:
             return
@@ -600,30 +619,33 @@ with st.sidebar:
             # Observations
             obs_on_page = 0
             for obs in st.session_state.observations:
-                # Contrainte de pagination: max 2 observations par page, éviter le footer
+                # Contrainte de pagination: max 1 observation par page, éviter le footer
                 safe_bottom = getattr(pdf, 'b_margin', 15) + 20
-                if obs_on_page >= 2 or pdf.get_y() > (pdf.h - safe_bottom - 80):
+                if obs_on_page >= 1 or pdf.get_y() > (pdf.h - safe_bottom - 120):
                     pdf.add_page()
                     obs_on_page = 0
                 # Début du bloc avec encadrement
                 x_box = pdf.l_margin
                 y_box = pdf.get_y()
-                # Titre d'observation (bandeau cyan arrondi)
+                # Titre d'observation (bandeau cyan arrondi) avec retour à la ligne si trop long
                 pdf.set_font(base_font, "B", 13)
                 pdf.set_text_color(255, 255, 255)
                 pdf.set_fill_color(0, 173, 239)
                 title_h = 8
-                pdf.rounded_rect(pdf.l_margin, y_box, content_width, title_h, r=2, style='DF')
-                pdf.set_xy(pdf.l_margin + 2, y_box)
-                pdf.cell(content_width - 4, title_h, obs['Critère'], 0, 1, 'L')
+                # Calcul de la hauteur nécessaire
+                req_h = pdf.calculate_multicell_height(obs['Critère'], content_width - 4, 6)
+                block_h = max(title_h, req_h + 2)
+                pdf.rounded_rect(pdf.l_margin, y_box, content_width, block_h, r=2, style='DF')
+                pdf.set_xy(pdf.l_margin + 2, y_box + (block_h - req_h) / 2 - 1)
+                pdf.multi_cell(content_width - 4, 6, obs['Critère'])
                 pdf.set_text_color(0, 0, 0)
                 pdf.set_font(base_font, "", 11)
-                pdf.ln(1)
+                pdf.ln(2)
 
                 # Caractéristiques avec libellés en gras
                 pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Domaine: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Domaine'] or "") + "\n")
                 pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Composante: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Composante'] or "") + "\n")
-                pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Mode: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Mode'] or "") + "\n")
+                # Suppression de la ligne Mode (inutile)
                 if obs.get("Activités"):
                     pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Activités réalisées: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Activités']) + "\n")
                 # Observables: Likert horizontal avec emoji + habillage
@@ -701,8 +723,8 @@ with st.sidebar:
                                 break
                         if not matched:
                             class_comments.append(l)
-                    if class_comments:
-                        pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (classe): "); pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
+                if class_comments:
+                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: "); pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
                     if student_comments:
                         pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (élèves):\n")
                         pdf.set_font(base_font, "", 11)
@@ -722,7 +744,10 @@ with st.sidebar:
                 box_w = content_width
                 box_h = y_after - y_box
                 pdf.set_draw_color(0, 0, 0)
-                pdf.rounded_rect(x_box, y_box, box_w, box_h, r=3, style='D')
+                # Bordure plus épaisse et parfaitement alignée avec le titre
+                pdf.set_line_width(0.6)
+                pdf.rounded_rect(pdf.l_margin, y_box, content_width, box_h, r=3, style='D')
+                pdf.set_line_width(0.2)
                 pdf.ln(6)
                 obs_on_page += 1
 
