@@ -12,6 +12,12 @@ class CustomPDF(FPDF):
         self.maitre = teacher_name
         self.first_page = True
         self.images_dir = Path(__file__).parent / "images"
+        # Try to resolve emoji images for Likert scale
+        self.emoji_paths = {
+            0: self._first_existing(["emoji_graine.png", "graine.png", "seed.png"]),
+            1: self._first_existing(["emoji_pousse.png", "pousse.png", "sprout.png"]),
+            2: self._first_existing(["emoji_fleur.png", "fleur.png", "flower.png"]),
+        }
 
     def rounded_rect(self, x, y, w, h, r=5, style='DF'):
         k = self.k
@@ -56,6 +62,38 @@ class CustomPDF(FPDF):
             )
         )
 
+    def _first_existing(self, candidates):
+        for name in candidates:
+            p = self.images_dir / name
+            if p.exists():
+                return p
+        return None
+
+    def draw_likert_scale(self, selected_index: int, x: float, y: float, box_w: float = 14, box_h: float = 12, gap: float = 6):
+        # Draw three boxes horizontally and highlight selected
+        for i in range(3):
+            bx = x + i * (box_w + gap)
+            # border color
+            if i == selected_index:
+                self.set_draw_color(0, 173, 239)
+                self.set_line_width(0.6)
+            else:
+                self.set_draw_color(180, 180, 180)
+                self.set_line_width(0.2)
+            self.rounded_rect(bx, y, box_w, box_h, r=2, style='D')
+            # place emoji image if available
+            img_path = self.emoji_paths.get(i)
+            if img_path is not None:
+                try:
+                    self.image(str(img_path), x=bx + 2, y=y + 2, w=box_w - 4, h=box_h - 4)
+                except Exception:
+                    pass
+            else:
+                # fallback: ASCII marker (avoid Unicode)
+                self.set_xy(bx, y + 3)
+                labels = ["1", "2", "3"]
+                self.cell(box_w, 6, labels[i], align="C")
+
     def header(self):
         if not self.first_page:
             return
@@ -85,7 +123,8 @@ class CustomPDF(FPDF):
         self.set_font("Arial", "B", 16)
         self.rounded_rect(x_rect, y_rect, w_rect, h_rect, r=radius, style='DF')
         self.set_xy(x_rect, y_rect + 3)
-        self.cell(w_rect, h_rect - 6, "Synthèse des informations", 0, 0, "C")
+        # Remplacer le texte de bannière par la date du jour
+        self.cell(w_rect, h_rect - 6, datetime.now().strftime("%d/%m/%Y"), 0, 0, "C")
 
         # Reset couleur texte et marquer fin de première page
         self.set_text_color(0, 0, 0)
@@ -551,9 +590,6 @@ with st.sidebar:
             pdf.set_font(base_font, "", 12)
             date_str = datetime.now().strftime("%d/%m/%Y")
             date_filename = datetime.now().strftime("%Y-%m-%d_%H-%M")
-            # Date juste après la bannière, sans libellé
-            pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 7, date_str)
-            pdf.ln(3)
 
             # Observations
             for obs in st.session_state.observations:
@@ -575,10 +611,59 @@ with st.sidebar:
                 pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Mode: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Mode'] or "") + "\n")
                 if obs.get("Activités"):
                     pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Activités réalisées: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Activités']) + "\n")
+                # Observables: Likert horizontal avec emoji
                 if obs.get("Observables"):
-                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Observables: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Observables']) + "\n")
+                    pdf.ln(1)
+                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Observables\n")
+                    pdf.set_font(base_font, "", 11)
+                    # Dimensions pour l'échelle
+                    scale_box_w = 14
+                    scale_box_h = 12
+                    scale_gap = 6
+                    scale_total_w = 3 * (scale_box_w + scale_gap) - scale_gap
+                    text_w = content_width - scale_total_w - 6
+                    for item in obs["Observables"]:
+                        # Parse "[eleve:] <valeur> - <libellé>"
+                        subject = "Classe"
+                        raw = item
+                        if ":" in raw:
+                            parts = raw.split(":", 1)
+                            subject = parts[0].strip()
+                            raw = parts[1].strip()
+                        # Determine index
+                        idx = 1
+                        if ("🌰" in raw) or ("Encore en train de germer" in raw):
+                            idx = 0
+                        elif ("🌸" in raw) or ("Épanoui" in raw):
+                            idx = 2
+                        else:
+                            idx = 1
+                        # Extract label after dash if present
+                        label = raw
+                        if " - " in raw:
+                            label = raw.split(" - ", 1)[1].strip()
+                        # Layout: text left, scale right
+                        y_line = pdf.get_y()
+                        pdf.set_x(pdf.l_margin)
+                        # Use ASCII hyphen to avoid Unicode issues
+                        pdf.multi_cell(text_w, 6, f"{subject} - {label}", align='L')
+                        # draw scale aligned to first line
+                        pdf.draw_likert_scale(idx, x=pdf.l_margin + text_w + 6, y=y_line, box_w=scale_box_w, box_h=scale_box_h, gap=scale_gap)
+                        # advance y to accommodate scale height if text was short
+                        y_after_text = pdf.get_y()
+                        min_y = y_line + scale_box_h + 2
+                        if y_after_text < min_y:
+                            pdf.set_y(min_y)
                 if obs.get("Commentaire"):
-                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: "); pdf.set_font(base_font, "", 11); pdf.write(6, obs['Commentaire'] + "\n")
+                    # Nettoyage: éviter d'afficher des lignes de type "Nom: ... - ..." dans le commentaire
+                    comment_lines = [l.strip() for l in str(obs['Commentaire']).replace("\r", "\n").split("\n") if l.strip()]
+                    filtered = []
+                    for l in comment_lines:
+                        if (":" in l and " - " in l) or any(tok in l for tok in ["🌰", "🌱", "🌸"]):
+                            continue
+                        filtered.append(l)
+                    if filtered:
+                        pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: "); pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(filtered) + "\n")
                 if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
                     pdf.ln(1)
                     pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Mise en avant\n")
