@@ -621,7 +621,7 @@ with st.sidebar:
                         if obs.get("Processus_mis_en_avant"):
                             st.markdown(f"- Processus cognitif : {obs['Processus_mis_en_avant']}")
             
-            # Génération et téléchargement PDF (version améliorée)
+            # Génération et téléchargement PDF
             pdf_buffer = BytesIO()
             pdf = CustomPDF()
             pdf.set_auto_page_break(auto=True, margin=15)
@@ -659,12 +659,14 @@ with st.sidebar:
                 title_h = 8
                 # Calcul de la hauteur nécessaire
                 req_h = pdf.calculate_multicell_height(obs['Critère'], content_width - 4, 6)
-                block_h = max(title_h, req_h + 2)
+                # Plus d'espace bas dans le bandeau pour aérer
+                block_h = max(title_h, req_h + 3)
                 # Utiliser un bandeau à coins arrondis en haut uniquement, aligné avec le cadre
                 frame_x = pdf.l_margin + 3
                 frame_w = content_width - 6
                 pdf.rounded_top_rect(frame_x, y_box, frame_w, block_h, r=3, style='F')
-                pdf.set_xy(frame_x + 2, y_box + (block_h - req_h) / 2 - 1)
+                # Positionner plus haut (padding haut faible, bas plus large)
+                pdf.set_xy(frame_x + 2, y_box + 1)
                 pdf.multi_cell(frame_w - 4, 6, obs['Critère'])
                 pdf.set_text_color(0, 0, 0)
                 pdf.set_font(base_font, "", 11)
@@ -686,8 +688,8 @@ with st.sidebar:
                     scale_box_h = 12
                     scale_gap = 6
                     scale_total_w = 3 * (scale_box_w + scale_gap) - scale_gap
-                    right_padding = 6  # espace entre l'échelle et le cadre
-                    text_w = content_width - scale_total_w - 6 - right_padding
+                    right_padding = 6  # espace entre l'échelle et le cadre à droite
+                    text_w = frame_w - scale_total_w - 6 - right_padding
                     for item in obs["Observables"]:
                         # Parse "[eleve:] <valeur> - <libellé>"
                         subject = "Classe"
@@ -717,19 +719,19 @@ with st.sidebar:
                         row_h = max(label_h + subj_h + 2, scale_box_h + 6)
                         # Fond de ligne
                         pdf.set_fill_color(255, 255, 255)
-                        pdf.rounded_rect(pdf.l_margin + 3, y_line, content_width - 6, row_h, r=1.5, style='F')
+                        pdf.rounded_rect(frame_x, y_line, frame_w, row_h, r=1.5, style='F')
                         # Libellé observable
-                        pdf.set_xy(pdf.l_margin + 3, y_line + 1)
+                        pdf.set_xy(frame_x + 2, y_line + 1)
                         pdf.multi_cell(text_w, 6, label, align='L')
                         # Sous-ligne: Classe ou noms des élèves
                         pdf.set_text_color(90, 90, 90)
                         pdf.set_font(base_font, "", 10)
-                        pdf.set_xy(pdf.l_margin + 3, y_line + label_h + 1)
+                        pdf.set_xy(frame_x + 2, y_line + label_h + 1)
                         pdf.cell(text_w, 5, subject if subject else "Classe", 0, 0, 'L')
                         pdf.set_text_color(0, 0, 0)
                         pdf.set_font(base_font, "", 11)
                         # Échelle à droite
-                        pdf.draw_likert_scale(idx, x=pdf.l_margin + 3 + text_w + 6, y=y_line + 2, box_w=scale_box_w, box_h=scale_box_h, gap=scale_gap)
+                        pdf.draw_likert_scale(idx, x=frame_x + text_w + 6, y=y_line + 2, box_w=scale_box_w, box_h=scale_box_h, gap=scale_gap)
                         # advance y
                         pdf.set_y(y_line + row_h)
                 if obs.get("Commentaire"):
@@ -760,7 +762,10 @@ with st.sidebar:
                         if not matched:
                             class_comments.append(l)
                 if class_comments:
-                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "\nCommentaire: "); pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
+                    # Faire la ligne vide avec ln() puis conserver le même x
+                    pdf.ln(1)
+                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: ")
+                    pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
                     if student_comments:
                         pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (élèves):\n")
                         pdf.set_font(base_font, "", 11)
