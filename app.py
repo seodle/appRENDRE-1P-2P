@@ -2,6 +2,7 @@ import streamlit as st
 from fpdf import FPDF
 from io import BytesIO
 from datetime import datetime
+from pathlib import Path
 
 # --- Données enrichies avec les 7 domaines, compétences transversales et processus cognitifs ---
 domaines = {
@@ -127,25 +128,6 @@ domaines = {
                     "Observables": ["Nomme ce qu’il voit", "Pose des questions", "Compare deux éléments"],
                     "compétences_transversales": ["Curiosité", "Observation", "Respect de la nature"],
                     "processus_cognitifs": ["Perception visuelle", "Catégorisation", "Mémoire épisodique"]
-                }
-            }
-        }
-    },
-    "Santé globale": {
-        "icon": "🍏",
-        "composantes": {
-            "Hygiène et bien-être": {
-                "Se laver les mains correctement": {
-                    "Activités par contexte": {
-                        "En classe": ["Chanson du lavage de mains", "Affiche séquentielle"],
-                        "Sur le banc": ["Discussion : 'Pourquoi se laver les mains ?'"],
-                        "Jeu à faire semblant": ["Docteur ou cuisinier", "Poupée qui apprend à se laver"],
-                        "Dehors": ["Lavage après jardinage", "Rituel avant le goûter"],
-                        "Autres": ["Atelier santé", "Visite d’un professionnel"]
-                    },
-                    "Observables": ["Utilise du savon", "Frotte toutes les parties", "Se sèche les mains"],
-                    "compétences_transversales": ["Autonomie", "Responsabilité", "Soins de soi"],
-                    "processus_cognitifs": ["Mémoire procédurale", "Séquençage", "Autocontrôle"]
                 }
             }
         }
@@ -437,4 +419,16 @@ with st.sidebar:
                 mime="application/pdf"
             )
         else:
-            st.info("Aucune observation validée pour l’instant.")
+            st.info("Aucune observation validée pour l'instant.")
+
+# --- Footer institutionnel ---
+left_spacer, center_col, right_spacer = st.columns([1, 2, 1])
+with center_col:
+    inner_left, content_col, inner_right = st.columns([1, 8, 1])
+    with content_col:
+        logo_col, text_col = st.columns([1, 8])
+        with logo_col:
+            logo_path = Path(__file__).parent / "images" / "logo_geneve.jpg"
+            st.image(str(logo_path), width=64)
+        with text_col:
+            st.markdown("<br/>**Direction générale de l'enseignement obligatoire**<br/>Service enseignement et évaluation", unsafe_allow_html=True)
