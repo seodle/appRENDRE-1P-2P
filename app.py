@@ -370,7 +370,7 @@ for domaine, data in domaines.items():
 
                         with tab_enseigner:
 
-                            st.markdown("#### 🧠 Compétences transversales & Processus cognitifs")
+                            st.markdown("#### 🌟 Compétences transversales & Processus cognitifs")
                             st.markdown(f"- **Compétences transversales mobilisables** : {', '.join(detail['compétences_transversales'])}")
                             st.markdown(f"- **Processus cognitifs que l'on peut renforcer** : {', '.join(detail['processus_cognitifs'])}")
                             st.markdown("#### 🎯 Idées d'activités pédagogiques")
