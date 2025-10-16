@@ -167,6 +167,16 @@ def reset_all_checkboxes():
         del st.session_state[k]
     st.session_state.reset_requested = True
 
+# --- Callback: ajouter un élève dans une liste dédiée et vider le champ ---
+def add_student_to_list(list_key: str, input_key: str):
+    name = st.session_state.get(input_key, "").strip()
+    if name:
+        current_list = st.session_state.get(list_key, [])
+        if name not in current_list:
+            current_list.append(name)
+            st.session_state[list_key] = current_list
+        st.session_state[input_key] = ""
+
 # --- Bouton flèche fixe en haut à droite ---
 st.markdown(
     """
@@ -214,61 +224,50 @@ for domaine, data in domaines.items():
                                         st.markdown(f"- {act}")
 
                         with tab_evaluer:
-                            st.markdown("### 👀 Observables à évaluer")
+                            st.markdown("### 👀 Observables")
                             observables = detail["Observables"]
 
-                            # Choix dynamique : classe entière ou élèves
-                            mode_obs = st.radio(
-                                "Mode d’observation",
-                                ("Toute la classe", "Élèves sélectionnés"),
-                                key=f"mode_{domaine}_{comp_name}_{crit_name}",
-                                horizontal=True
-                            )
-
-                            eleves_a_observer = []
-                            if mode_obs == "Élèves sélectionnés":
-                                eleves_input = st.text_input(
-                                    "Liste des élèves (séparés par des virgules)",
-                                    key=f"eleves_{domaine}_{comp_name}_{crit_name}"
-                                )
-                                if eleves_input:
-                                    eleves_a_observer = [e.strip() for e in eleves_input.split(",") if e.strip()]
-                            else:
-                                eleves_a_observer = ["Toute la classe"]
-
-                            # Affichage des curseurs d'évaluation (🌰 / 🌱 / 🌸)
+                            # Affichage des curseurs d'évaluation (🌰 / 🌱 / 🌸) avec "Appliquer à"
                             scale_options = [
                                 "🌰 Encore en train de germer",
                                 "🌱 En train de grandir",
                                 "🌸 Épanoui(e)"
                             ]
                             selected_observables = []
-                            if mode_obs == "Toute la classe":
-                                for obs in observables:
-                                    st.markdown(f"**{obs}**")
-                                    col_slider, col_space = st.columns([4, 6])
-                                    with col_slider:
-                                        value = st.select_slider(
-                                            "",
-                                            options=scale_options,
-                                            key=f"classe_{domaine}_{comp_name}_{crit_name}_{obs}_rating",
-                                            label_visibility="collapsed"
-                                        )
+                            for obs in observables:
+                                st.markdown(f"**{obs}**")
+                                value = st.select_slider(
+                                    "",
+                                    options=scale_options,
+                                    key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating",
+                                    label_visibility="collapsed"
+                                )
+                                apply_mode = st.selectbox(
+                                    "Appliquer à",
+                                    ("Toute la classe", "Élèves particuliers"),
+                                    key=f"apply_{domaine}_{comp_name}_{crit_name}_{obs}"
+                                )
+                                if apply_mode == "Toute la classe":
                                     selected_observables.append(f"{value} - {obs}")
-                            else:
-                                for obs in observables:
-                                    st.markdown(f"**{obs}**")
-                                    for eleve in eleves_a_observer:
-                                        name_col, slider_col = st.columns([6, 4])
-                                        with name_col:
-                                            st.markdown(eleve)
-                                        with slider_col:
-                                            value = st.select_slider(
-                                                "",
-                                                options=scale_options,
-                                                key=f"eleve_{domaine}_{comp_name}_{crit_name}_{obs}_{eleve}_rating",
-                                                label_visibility="collapsed"
-                                            )
+                                else:
+                                    # Liste dynamique d'élèves par observable
+                                    list_key = f"eleves_list_{domaine}_{comp_name}_{crit_name}_{obs}"
+                                    input_key = f"eleves_input_{domaine}_{comp_name}_{crit_name}_{obs}"
+                                    if list_key not in st.session_state:
+                                        st.session_state[list_key] = []
+                                    st.text_input(
+                                        "Ajouter un élève (Entrée pour valider)",
+                                        key=input_key,
+                                        on_change=add_student_to_list,
+                                        args=(list_key, input_key)
+                                    )
+                                    # Affichage compact des élèves saisis
+                                    if st.session_state[list_key]:
+                                        st.markdown(
+                                            ", ".join(st.session_state[list_key])
+                                        )
+                                    # Enregistrer une entrée par élève
+                                    for eleve in st.session_state[list_key]:
                                         selected_observables.append(f"{eleve}: {value} - {obs}")
 
                             # Commentaire
@@ -282,7 +281,7 @@ for domaine, data in domaines.items():
                                         "Domaine": domaine,
                                         "Composante": comp_name,
                                         "Critère": crit_name,
-                                        "Mode": mode_obs,
+                                        "Mode": "Selon sélection (classe/élèves)",
                                         "Observables": selected_observables.copy(),
                                         "Commentaire": commentaire or ""
                                     }
