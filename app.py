@@ -690,15 +690,16 @@ with st.sidebar:
                     scale_total_w = 3 * (scale_box_w + scale_gap) - scale_gap
                     right_padding = 6  # espace entre l'échelle et le cadre à droite
                     text_w = frame_w - scale_total_w - 6 - right_padding
+                    # Grouper les observables par (label, niveau)
+                    groups = {}
+                    order = []
                     for item in obs["Observables"]:
-                        # Parse "[eleve:] <valeur> - <libellé>"
                         subject = "Classe"
                         raw = item
                         if ":" in raw:
                             parts = raw.split(":", 1)
                             subject = parts[0].strip()
                             raw = parts[1].strip()
-                        # Determine index
                         idx = 1
                         if ("Encore en train de germer" in raw):
                             idx = 0
@@ -706,33 +707,58 @@ with st.sidebar:
                             idx = 2
                         else:
                             idx = 1
-                        # Extract label after dash if present
                         label = raw
                         if " - " in raw:
                             label = raw.split(" - ", 1)[1].strip()
-                        # Layout: text left, scale right
+                        key = (label, idx)
+                        if key not in groups:
+                            groups[key] = {"names": [], "has_class": False}
+                            order.append(key)
+                        if subject.lower() == "classe":
+                            groups[key]["has_class"] = True
+                        else:
+                            if subject not in groups[key]["names"]:
+                                groups[key]["names"].append(subject)
+
+                    # Rendu groupé: un label par ligne, sujets listés avec virgules et retour à la ligne si long
+                    for (label, idx) in order:
                         y_line = pdf.get_y()
-                        # Calcul de la hauteur nécessaire pour le libellé
+                        names = groups[(label, idx)]["names"]
+                        has_class = groups[(label, idx)]["has_class"]
+                        subject_text_parts = []
+                        if has_class:
+                            subject_text_parts.append("Classe")
+                        if names:
+                            subject_text_parts.append(", ".join(names))
+                        subject_text = ", ".join(subject_text_parts) if subject_text_parts else "Classe"
+
                         pdf.set_font(base_font, "", 11)
                         label_h = pdf.calculate_multicell_height(label, text_w, 6)
-                        subj_h = 5
-                        row_h = max(label_h + subj_h + 2, scale_box_h + 6)
-                        # Fond de ligne
+                        pdf.set_font(base_font, "", 10)
+                        subj_h = pdf.calculate_multicell_height(subject_text, text_w, 5)
+                        row_h = max(label_h + subj_h + 3, scale_box_h + 6)
+
+                        # Fond de ligne aligné avec le cadre
                         pdf.set_fill_color(255, 255, 255)
                         pdf.rounded_rect(frame_x, y_line, frame_w, row_h, r=1.5, style='F')
-                        # Libellé observable
+
+                        # Libellé
+                        pdf.set_font(base_font, "", 11)
                         pdf.set_xy(frame_x + 2, y_line + 1)
                         pdf.multi_cell(text_w, 6, label, align='L')
-                        # Sous-ligne: Classe ou noms des élèves
+
+                        # Sujet(s) sous le libellé, avec retour à la ligne si nécessaire
                         pdf.set_text_color(90, 90, 90)
                         pdf.set_font(base_font, "", 10)
-                        pdf.set_xy(frame_x + 2, y_line + label_h + 1)
-                        pdf.cell(text_w, 5, subject if subject else "Classe", 0, 0, 'L')
+                        pdf.set_xy(frame_x + 2, y_line + 1 + label_h)
+                        pdf.multi_cell(text_w, 5, subject_text, align='L')
                         pdf.set_text_color(0, 0, 0)
                         pdf.set_font(base_font, "", 11)
+
                         # Échelle à droite
                         pdf.draw_likert_scale(idx, x=frame_x + text_w + 6, y=y_line + 2, box_w=scale_box_w, box_h=scale_box_h, gap=scale_gap)
-                        # advance y
+
+                        # Avancer sous le bloc
                         pdf.set_y(y_line + row_h)
                 if obs.get("Commentaire"):
                     # Séparer commentaire classe vs individus (si le texte contient des préfixes)
