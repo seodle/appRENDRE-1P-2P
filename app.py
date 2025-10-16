@@ -83,6 +83,12 @@ class CustomPDF(FPDF):
             self.rounded_rect(bx, y, box_w, box_h, r=2, style='D')
             # place emoji image if available
             img_path = self.emoji_paths.get(i)
+            # if specific image missing, fall back to any available image to avoid numbers
+            if img_path is None:
+                for alt in self.emoji_paths.values():
+                    if alt is not None:
+                        img_path = alt
+                        break
             if img_path is not None:
                 try:
                     self.image(str(img_path), x=bx + 2, y=y + 2, w=box_w - 4, h=box_h - 4)
@@ -592,18 +598,27 @@ with st.sidebar:
             date_filename = datetime.now().strftime("%Y-%m-%d_%H-%M")
 
             # Observations
+            obs_on_page = 0
             for obs in st.session_state.observations:
+                # Contrainte de pagination: max 2 observations par page, éviter le footer
+                safe_bottom = getattr(pdf, 'b_margin', 15) + 20
+                if obs_on_page >= 2 or pdf.get_y() > (pdf.h - safe_bottom - 80):
+                    pdf.add_page()
+                    obs_on_page = 0
                 # Début du bloc avec encadrement
                 x_box = pdf.l_margin
                 y_box = pdf.get_y()
-                # Titre d'observation (bandeau cyan)
+                # Titre d'observation (bandeau cyan arrondi)
                 pdf.set_font(base_font, "B", 13)
                 pdf.set_text_color(255, 255, 255)
                 pdf.set_fill_color(0, 173, 239)
-                pdf.cell(0, 8, obs['Critère'], 0, 1, 'L', fill=True)
+                title_h = 8
+                pdf.rounded_rect(pdf.l_margin, y_box, content_width, title_h, r=2, style='DF')
+                pdf.set_xy(pdf.l_margin + 2, y_box)
+                pdf.cell(content_width - 4, title_h, obs['Critère'], 0, 1, 'L')
                 pdf.set_text_color(0, 0, 0)
                 pdf.set_font(base_font, "", 11)
-                pdf.ln(2)
+                pdf.ln(1)
 
                 # Caractéristiques avec libellés en gras
                 pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Domaine: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Domaine'] or "") + "\n")
@@ -611,7 +626,7 @@ with st.sidebar:
                 pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Mode: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Mode'] or "") + "\n")
                 if obs.get("Activités"):
                     pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Activités réalisées: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Activités']) + "\n")
-                # Observables: Likert horizontal avec emoji
+                # Observables: Likert horizontal avec emoji + habillage
                 if obs.get("Observables"):
                     pdf.ln(1)
                     pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Observables\n")
@@ -621,7 +636,8 @@ with st.sidebar:
                     scale_box_h = 12
                     scale_gap = 6
                     scale_total_w = 3 * (scale_box_w + scale_gap) - scale_gap
-                    text_w = content_width - scale_total_w - 6
+                    right_padding = 6  # espace entre l'échelle et le cadre
+                    text_w = content_width - scale_total_w - 6 - right_padding
                     for item in obs["Observables"]:
                         # Parse "[eleve:] <valeur> - <libellé>"
                         subject = "Classe"
@@ -632,9 +648,9 @@ with st.sidebar:
                             raw = parts[1].strip()
                         # Determine index
                         idx = 1
-                        if ("🌰" in raw) or ("Encore en train de germer" in raw):
+                        if ("Encore en train de germer" in raw):
                             idx = 0
-                        elif ("🌸" in raw) or ("Épanoui" in raw):
+                        elif ("Épanoui" in raw):
                             idx = 2
                         else:
                             idx = 1
@@ -644,26 +660,54 @@ with st.sidebar:
                             label = raw.split(" - ", 1)[1].strip()
                         # Layout: text left, scale right
                         y_line = pdf.get_y()
+                        # Habillage léger de la ligne
+                        row_h = max(6, scale_box_h + 4)
+                        pdf.set_fill_color(245, 248, 250)
+                        pdf.rounded_rect(pdf.l_margin, y_line, content_width, row_h, r=1.5, style='F')
                         pdf.set_x(pdf.l_margin)
                         # Use ASCII hyphen to avoid Unicode issues
                         pdf.multi_cell(text_w, 6, f"{subject} - {label}", align='L')
                         # draw scale aligned to first line
-                        pdf.draw_likert_scale(idx, x=pdf.l_margin + text_w + 6, y=y_line, box_w=scale_box_w, box_h=scale_box_h, gap=scale_gap)
+                        pdf.draw_likert_scale(idx, x=pdf.l_margin + text_w + 6, y=y_line + 2, box_w=scale_box_w, box_h=scale_box_h, gap=scale_gap)
                         # advance y to accommodate scale height if text was short
                         y_after_text = pdf.get_y()
-                        min_y = y_line + scale_box_h + 2
+                        min_y = y_line + row_h
                         if y_after_text < min_y:
                             pdf.set_y(min_y)
                 if obs.get("Commentaire"):
-                    # Nettoyage: éviter d'afficher des lignes de type "Nom: ... - ..." dans le commentaire
+                    # Séparer commentaire classe vs individus (si le texte contient des préfixes)
                     comment_lines = [l.strip() for l in str(obs['Commentaire']).replace("\r", "\n").split("\n") if l.strip()]
-                    filtered = []
+                    student_names = []
+                    for it in obs.get("Observables", []):
+                        if ":" in it:
+                            nm = it.split(":", 1)[0].strip()
+                            if nm and nm not in student_names:
+                                student_names.append(nm)
+                    class_comments = []
+                    student_comments = {}
                     for l in comment_lines:
-                        if (":" in l and " - " in l) or any(tok in l for tok in ["🌰", "🌱", "🌸"]):
+                        # ignorer des lignes de type "Nom: ... - ..." (valeurs Likert)
+                        if (":" in l and " - " in l):
                             continue
-                        filtered.append(l)
-                    if filtered:
-                        pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: "); pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(filtered) + "\n")
+                        lower = l.lower()
+                        if lower.startswith("classe:"):
+                            class_comments.append(l.split(":", 1)[1].strip())
+                            continue
+                        matched = False
+                        for nm in student_names:
+                            if l.startswith(nm + ":"):
+                                student_comments.setdefault(nm, []).append(l.split(":", 1)[1].strip())
+                                matched = True
+                                break
+                        if not matched:
+                            class_comments.append(l)
+                    if class_comments:
+                        pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (classe): "); pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
+                    if student_comments:
+                        pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (élèves):\n")
+                        pdf.set_font(base_font, "", 11)
+                        for nm, notes in student_comments.items():
+                            pdf.set_x(pdf.l_margin); pdf.write(6, f"- {nm}: {' '.join(notes)}\n")
                 if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
                     pdf.ln(1)
                     pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Mise en avant\n")
@@ -679,7 +723,8 @@ with st.sidebar:
                 box_h = y_after - y_box
                 pdf.set_draw_color(0, 0, 0)
                 pdf.rounded_rect(x_box, y_box, box_w, box_h, r=3, style='D')
-                pdf.ln(4)
+                pdf.ln(6)
+                obs_on_page += 1
 
             pdf_output = bytes(pdf.output(dest='S'))
             pdf_buffer.write(pdf_output)
