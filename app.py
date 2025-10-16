@@ -236,18 +236,40 @@ for domaine, data in domaines.items():
                             else:
                                 eleves_a_observer = ["Toute la classe"]
 
-                            # Affichage des checkboxes
+                            # Affichage des curseurs d'évaluation (🌰 / 🌱 / 🌸)
+                            scale_options = [
+                                "🌰 Encore en train de germer",
+                                "🌱 En train de grandir",
+                                "🌸 Épanoui(e)"
+                            ]
                             selected_observables = []
                             if mode_obs == "Toute la classe":
                                 for obs in observables:
-                                    if st.checkbox(obs, key=f"classe_{domaine}_{comp_name}_{crit_name}_{obs}"):
-                                        selected_observables.append(obs)
+                                    st.markdown(f"**{obs}**")
+                                    col_slider, col_space = st.columns([4, 6])
+                                    with col_slider:
+                                        value = st.select_slider(
+                                            "",
+                                            options=scale_options,
+                                            key=f"classe_{domaine}_{comp_name}_{crit_name}_{obs}_rating",
+                                            label_visibility="collapsed"
+                                        )
+                                    selected_observables.append(f"{value} - {obs}")
                             else:
                                 for obs in observables:
                                     st.markdown(f"**{obs}**")
                                     for eleve in eleves_a_observer:
-                                        if st.checkbox(eleve, key=f"eleve_{domaine}_{comp_name}_{crit_name}_{obs}_{eleve}"):
-                                            selected_observables.append(f"{eleve}: {obs}")
+                                        name_col, slider_col = st.columns([6, 4])
+                                        with name_col:
+                                            st.markdown(eleve)
+                                        with slider_col:
+                                            value = st.select_slider(
+                                                "",
+                                                options=scale_options,
+                                                key=f"eleve_{domaine}_{comp_name}_{crit_name}_{obs}_{eleve}_rating",
+                                                label_visibility="collapsed"
+                                            )
+                                        selected_observables.append(f"{eleve}: {value} - {obs}")
 
                             # Commentaire
                             comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
