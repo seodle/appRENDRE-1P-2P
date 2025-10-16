@@ -62,6 +62,33 @@ class CustomPDF(FPDF):
             )
         )
 
+    def rounded_top_rect(self, x, y, w, h, r=5, style='F'):
+        # Draw a rectangle with rounded top corners only, straight bottom
+        k = self.k
+        hp = self.h
+        if style == 'F':
+            op = 'f'
+        elif style in ['FD', 'DF']:
+            op = 'B'
+        else:
+            op = 'S'
+        my_arc = 4/3*(2**0.5 - 1)
+        # start at top-left inner corner
+        self._out("%.2f %.2f m" % ((x + r) * k, (hp - y) * k))
+        # top edge
+        self._out("%.2f %.2f l" % ((x + w - r) * k, (hp - y) * k))
+        # top-right arc
+        self._Arc(x + w - r + my_arc * r, y, x + w, y + r - my_arc * r, x + w, y + r)
+        # right edge down to bottom
+        self._out("%.2f %.2f l" % (((x + w) * k), (hp - (y + h)) * k))
+        # bottom edge straight to left
+        self._out("%.2f %.2f l" % ((x * k), (hp - (y + h)) * k))
+        # left edge up to top-left arc start
+        self._out("%.2f %.2f l" % (x * k, (hp - (y + r)) * k))
+        # top-left arc
+        self._Arc(x, y + r - my_arc * r, x + r - my_arc * r, y, x + r, y)
+        self._out(op)
+
     def _first_existing(self, candidates):
         for name in candidates:
             p = self.images_dir / name
@@ -136,10 +163,8 @@ class CustomPDF(FPDF):
         # Titre centré
         self.set_font("Arial", "B", 20)
         self.set_xy(0, 10)
-        self.cell(0, 10, "Fichet de séance", align="C")   
-
-        # (Nom enseignant non affiché)
-
+        self.cell(0, 10, "Fichet de séance", align="C")
+           
         # Bannière
         x_rect, y_rect, w_rect, h_rect, radius = 10, 30, 190, 15, 5
         self.set_fill_color(0, 173, 239)
@@ -437,7 +462,7 @@ for domaine, data in domaines.items():
                             st.markdown("#### 🌟 Compétences transversales & Processus cognitifs")
                             st.markdown(f"- **Compétences transversales mobilisables** : {', '.join(detail['compétences_transversales'])}")
                             st.markdown(f"- **Processus cognitifs que l'on peut renforcer** : {', '.join(detail['processus_cognitifs'])}")
-                            st.markdown("#### 🎯 Idées d'activités pédagogiques")
+                            st.markdown("#### 🎯 Activités pédagogiques mobilisant ce critère")
                             # Espace visuel avant les onglets de lieux
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
                             icones_contextes = {
@@ -635,23 +660,26 @@ with st.sidebar:
                 # Calcul de la hauteur nécessaire
                 req_h = pdf.calculate_multicell_height(obs['Critère'], content_width - 4, 6)
                 block_h = max(title_h, req_h + 2)
-                pdf.rounded_rect(pdf.l_margin, y_box, content_width, block_h, r=2, style='DF')
-                pdf.set_xy(pdf.l_margin + 2, y_box + (block_h - req_h) / 2 - 1)
-                pdf.multi_cell(content_width - 4, 6, obs['Critère'])
+                # Utiliser un bandeau à coins arrondis en haut uniquement, aligné avec le cadre
+                frame_x = pdf.l_margin + 3
+                frame_w = content_width - 6
+                pdf.rounded_top_rect(frame_x, y_box, frame_w, block_h, r=3, style='F')
+                pdf.set_xy(frame_x + 2, y_box + (block_h - req_h) / 2 - 1)
+                pdf.multi_cell(frame_w - 4, 6, obs['Critère'])
                 pdf.set_text_color(0, 0, 0)
                 pdf.set_font(base_font, "", 11)
                 pdf.ln(2)
 
-                # Caractéristiques avec libellés en gras
-                pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Domaine: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Domaine'] or "") + "\n")
-                pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Composante: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Composante'] or "") + "\n")
+                # Caractéristiques avec libellés en gras (décalées vers l'intérieur du cadre)
+                pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Domaine: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Domaine'] or "") + "\n")
+                pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Composante: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Composante'] or "") + "\n")
                 # Suppression de la ligne Mode (inutile)
                 if obs.get("Activités"):
-                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Activités réalisées: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Activités']) + "\n")
+                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Activités réalisées: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Activités']) + "\n")
                 # Observables: Likert horizontal avec emoji + habillage
                 if obs.get("Observables"):
                     pdf.ln(1)
-                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Observables\n")
+                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Observables\n")
                     pdf.set_font(base_font, "", 11)
                     # Dimensions pour l'échelle
                     scale_box_w = 14
@@ -682,20 +710,28 @@ with st.sidebar:
                             label = raw.split(" - ", 1)[1].strip()
                         # Layout: text left, scale right
                         y_line = pdf.get_y()
-                        # Habillage léger de la ligne
-                        row_h = max(6, scale_box_h + 4)
-                        pdf.set_fill_color(245, 248, 250)
-                        pdf.rounded_rect(pdf.l_margin, y_line, content_width, row_h, r=1.5, style='F')
-                        pdf.set_x(pdf.l_margin)
-                        # Use ASCII hyphen to avoid Unicode issues
-                        pdf.multi_cell(text_w, 6, f"{subject} - {label}", align='L')
-                        # draw scale aligned to first line
-                        pdf.draw_likert_scale(idx, x=pdf.l_margin + text_w + 6, y=y_line + 2, box_w=scale_box_w, box_h=scale_box_h, gap=scale_gap)
-                        # advance y to accommodate scale height if text was short
-                        y_after_text = pdf.get_y()
-                        min_y = y_line + row_h
-                        if y_after_text < min_y:
-                            pdf.set_y(min_y)
+                        # Calcul de la hauteur nécessaire pour le libellé
+                        pdf.set_font(base_font, "", 11)
+                        label_h = pdf.calculate_multicell_height(label, text_w, 6)
+                        subj_h = 5
+                        row_h = max(label_h + subj_h + 2, scale_box_h + 6)
+                        # Fond de ligne
+                        pdf.set_fill_color(255, 255, 255)
+                        pdf.rounded_rect(pdf.l_margin + 3, y_line, content_width - 6, row_h, r=1.5, style='F')
+                        # Libellé observable
+                        pdf.set_xy(pdf.l_margin + 3, y_line + 1)
+                        pdf.multi_cell(text_w, 6, label, align='L')
+                        # Sous-ligne: Classe ou noms des élèves
+                        pdf.set_text_color(90, 90, 90)
+                        pdf.set_font(base_font, "", 10)
+                        pdf.set_xy(pdf.l_margin + 3, y_line + label_h + 1)
+                        pdf.cell(text_w, 5, subject if subject else "Classe", 0, 0, 'L')
+                        pdf.set_text_color(0, 0, 0)
+                        pdf.set_font(base_font, "", 11)
+                        # Échelle à droite
+                        pdf.draw_likert_scale(idx, x=pdf.l_margin + 3 + text_w + 6, y=y_line + 2, box_w=scale_box_w, box_h=scale_box_h, gap=scale_gap)
+                        # advance y
+                        pdf.set_y(y_line + row_h)
                 if obs.get("Commentaire"):
                     # Séparer commentaire classe vs individus (si le texte contient des préfixes)
                     comment_lines = [l.strip() for l in str(obs['Commentaire']).replace("\r", "\n").split("\n") if l.strip()]
@@ -724,29 +760,28 @@ with st.sidebar:
                         if not matched:
                             class_comments.append(l)
                 if class_comments:
-                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: "); pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
+                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "\nCommentaire: "); pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
                     if student_comments:
-                        pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (élèves):\n")
+                        pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (élèves):\n")
                         pdf.set_font(base_font, "", 11)
                         for nm, notes in student_comments.items():
-                            pdf.set_x(pdf.l_margin); pdf.write(6, f"- {nm}: {' '.join(notes)}\n")
+                            pdf.set_x(frame_x + 4); pdf.write(6, f"- {nm}: {' '.join(notes)}\n")
                 if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
                     pdf.ln(1)
-                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Mise en avant\n")
+                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Compétences transversales et processus cognitifs mis en avant\n")
                     pdf.set_font(base_font, "", 11)
                     if obs.get("Compétence_mise_en_avant"):
-                        pdf.set_x(pdf.l_margin); pdf.write(6, f"- Compétence transversale: {obs['Compétence_mise_en_avant']}\n")
+                        pdf.set_x(frame_x + 4); pdf.write(6, f"- Compétence transversale: {obs['Compétence_mise_en_avant']}\n")
                     if obs.get("Processus_mis_en_avant"):
-                        pdf.set_x(pdf.l_margin); pdf.write(6, f"- Processus cognitif: {obs['Processus_mis_en_avant']}\n")
+                        pdf.set_x(frame_x + 4); pdf.write(6, f"- Processus cognitif: {obs['Processus_mis_en_avant']}\n")
 
                 # Encadrement arrondi autour du bloc
                 y_after = pdf.get_y()
-                box_w = content_width
                 box_h = y_after - y_box
                 pdf.set_draw_color(0, 0, 0)
                 # Bordure plus épaisse et parfaitement alignée avec le titre
                 pdf.set_line_width(0.6)
-                pdf.rounded_rect(pdf.l_margin, y_box, content_width, box_h, r=3, style='D')
+                pdf.rounded_rect(frame_x, y_box, frame_w, box_h, r=3, style='D')
                 pdf.set_line_width(0.2)
                 pdf.ln(6)
                 obs_on_page += 1
