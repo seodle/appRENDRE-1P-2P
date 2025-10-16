@@ -241,7 +241,18 @@ st.markdown(
 
 # --- Interface principale ---
 st.set_page_config(page_title="Évaluer et enseigner en 1P-2P", layout="wide")
-st.title("Évaluer et enseigner en 1P-2P")
+
+# Header avec date et heure
+current_datetime = datetime.now().strftime("%d/%m/%Y - %H:%M")
+st.markdown(
+    f"""
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h1 style="margin: 0;">Évaluer et enseigner en 1P-2P</h1>
+        <div style="font-size: 1.1rem; color: #666; font-weight: 500;">{current_datetime}</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # --- Formulaire d’observation dynamique ---
 for domaine, data in domaines.items():
