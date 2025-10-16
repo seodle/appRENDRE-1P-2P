@@ -203,11 +203,19 @@ st.markdown(
         flex: 1 1 50%;
         max-width: 50%;
     }
+    /* Agrandir et harmoniser la police des libellés d'onglets */
+    .stTabs [data-baseweb="tab"],
+    .stTabs [data-baseweb="tab"] > div,
+    .stTabs [data-baseweb="tab"] > div > div {
+        font-family: inherit !important;
+        font-size: 1.8rem !important;
+        line-height: 1.2 !important;
+        font-weight: 1000 !important;
+    }
     .stTabs [data-baseweb="tab"] > div {
-        font-size: 2rem;
-        padding: 10px 0;
-        font-weight: 800;
+        padding: 12px 0;
         justify-content: center;
+        min-height: 56px;
     }
     </style>
     """,
@@ -215,8 +223,8 @@ st.markdown(
 )
 
 # --- Interface principale ---
-st.set_page_config(page_title="Enseigner et évaluer en 1P-2P", layout="wide")
-st.title("📚 appRENTISSAGE en 1P-2P")
+st.set_page_config(page_title="*app*RENDRE en 1P-2P", layout="wide")
+st.title("📚 *app*RENDRE en 1P-2P")
 
 # --- Formulaire d’observation dynamique ---
 for domaine, data in domaines.items():
@@ -229,12 +237,13 @@ for domaine, data in domaines.items():
                         
                         # Section déplacée dans l'onglet Enseigner
 
-                        tab_enseigner, tab_evaluer = st.tabs(["Enseigner", "Évaluer"])
+                        tab_enseigner, tab_evaluer = st.tabs(["🧑‍🏫 ENSEIGNER", "👀 ÉVALUER"])
 
                         with tab_enseigner:
+                            st.header("🧑‍🏫 Enseigner")
                             st.markdown("### 🧠 Compétences transversales & Processus cognitifs")
-                            st.markdown(f"- **Compétences transversales** : {', '.join(detail['compétences_transversales'])}")
-                            st.markdown(f"- **Processus cognitifs** : {', '.join(detail['processus_cognitifs'])}")
+                            st.markdown(f"- **Compétences transversales mobilisables** : {', '.join(detail['compétences_transversales'])}")
+                            st.markdown(f"- **Processus cognitifs mobilisables** : {', '.join(detail['processus_cognitifs'])}")
                             st.markdown("---")
                             st.markdown("### 🎯 Idées d’activités pédagogiques")
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
@@ -246,7 +255,8 @@ for domaine, data in domaines.items():
                                         st.markdown(f"- {act}")
 
                         with tab_evaluer:
-                            st.markdown("### 👀 Observables")
+                            st.header("👀 Évaluer")
+                            st.subheader("Observables")
                             observables = detail["Observables"]
 
                             # Affichage des curseurs d'évaluation (🌰 / 🌱 / 🌸) avec "Appliquer à"
