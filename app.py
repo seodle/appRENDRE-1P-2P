@@ -3,6 +3,7 @@ from fpdf import FPDF
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
+import base64
 
 # --- Données enrichies avec les 7 domaines, compétences transversales et processus cognitifs ---
 domaines = {
@@ -11,18 +12,20 @@ domaines = {
         "composantes": {
             "Motricité globale": {
                 "Sauter sur un pied": {
+                    "code_per": "CM 11",
                     "Activités par contexte": {
                         "En classe": ["Parcours entre les tables en sautant à cloche-pied", "Jeu du flamant rose (tenir la position)"],
-                        "Sur le banc": ["Sauter d’un banc à l’autre (faible hauteur)", "Équilibre sur un pied pendant 5 secondes"],
+                        "Sur le banc": ["Sauter d'un banc à l'autre (faible hauteur)", "Équilibre sur un pied pendant 5 secondes"],
                         "Jeu à faire semblant": ["Imiter un kangourou dans la savane", "Pirate avec une jambe de bois"],
                         "Dehors": ["Sauter dans les cerceaux au sol", "Course à cloche-pied dans la cour"],
                         "Autres": ["Atelier motricité en EPS", "Jeux libres avec consigne motrice"]
                     },
-                    "Observables": ["Tient l’équilibre ≥ 3 sec", "Change de pied spontanément", "Ne tombe pas"],
+                    "Observables": ["Tient l'équilibre ≥ 3 sec", "Change de pied spontanément", "Ne tombe pas"],
                     "compétences_transversales": ["Persévérance", "Estime de soi", "Régulation émotionnelle"],
                     "processus_cognitifs": ["Attention soutenue", "Contrôle inhibiteur", "Planification motrice"]
                 },
                 "Courir et s'arrêter": {
+                    "code_per": "CM 12",
                     "Activités par contexte": {
                         "En classe": ["Course entre les chaises avec arrêt au signal", "Jeu du feu vert/feu rouge"],
                         "Sur le banc": ["Marche rapide puis arrêt net", "Déplacement contrôlé"],
@@ -30,7 +33,7 @@ domaines = {
                         "Dehors": ["Relais avec départ/arrêt", "Course avec plots et arrêt sur cible"],
                         "Autres": ["Jeux sportifs collectifs", "Ateliers EPS"]
                     },
-                    "Observables": ["Freine sans glisser", "S’arrête pile sur la cible", "Contrôle sa vitesse"],
+                    "Observables": ["Freine sans glisser", "S'arrête pile sur la cible", "Contrôle sa vitesse"],
                     "compétences_transversales": ["Contrôle de soi", "Respect des règles", "Adaptabilité"],
                     "processus_cognitifs": ["Inhibition", "Attention sélective", "Temps de réaction"]
                 }
@@ -42,6 +45,7 @@ domaines = {
         "composantes": {
             "Gestion des émotions": {
                 "Identifier ses émotions": {
+                    "code_per": "AF 21",
                     "Activités par contexte": {
                         "En classe": ["Raconter une histoire avec des émotions", "Albums sur les émotions"],
                         "Sur le banc": ["Discussion en binôme : 'Quand j’étais triste…'", "Cartes émotions à identifier"],
@@ -61,6 +65,7 @@ domaines = {
         "composantes": {
             "Coopération": {
                 "Travailler en groupe": {
+                    "code_per": "SO 31",
                     "Activités par contexte": {
                         "En classe": ["Construire une tour en équipe", "Jeu de rôle collectif"],
                         "Sur le banc": ["Partager un matériel à tour de rôle", "Discuter d’une solution commune"],
@@ -80,6 +85,7 @@ domaines = {
         "composantes": {
             "Compréhension orale": {
                 "Suivre une consigne complexe": {
+                    "code_per": "LI 41",
                     "Activités par contexte": {
                         "En classe": ["Jeu des consignes à 2 étapes", "Écoute d’histoires avec questions"],
                         "Sur le banc": ["Répéter une consigne en ses mots", "Jeu de 'Simon dit'"],
@@ -98,7 +104,8 @@ domaines = {
         "icon": "🔢",
         "composantes": {
             "Dénombrement": {
-                "Compter jusqu’à 10 avec correspondance terme à terme": {
+                "Compter jusqu'à 10 avec correspondance terme à terme": {
+                    "code_per": "NU 51",
                     "Activités par contexte": {
                         "En classe": ["Compter les crayons", "Jeu de la marchande"],
                         "Sur le banc": ["Compter des jetons", "Associer chiffre et quantité"],
@@ -118,6 +125,7 @@ domaines = {
         "composantes": {
             "Découverte du vivant": {
                 "Observer les plantes et les animaux": {
+                    "code_per": "EV 61",
                     "Activités par contexte": {
                         "En classe": ["Coin nature avec loupe", "Album photo de la cour"],
                         "Sur le banc": ["Dessiner une feuille observée", "Classer des images animaux/plantes"],
@@ -158,6 +166,14 @@ def add_student_to_list(list_key: str, input_key: str):
             current_list.append(name)
             st.session_state[list_key] = current_list
         st.session_state[input_key] = ""
+
+# --- Helper: encoder image en base64 ---
+def img_to_base64(img_path: Path) -> str:
+    try:
+        with open(img_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except Exception:
+        return ""
 
 # --- Bouton flèche fixe en haut à droite ---
 st.markdown(
@@ -224,8 +240,8 @@ st.markdown(
 )
 
 # --- Interface principale ---
-st.set_page_config(page_title="appRENDRE en 1P-2P", layout="wide")
-st.title("📚 *app*RENDRE en 1P-2P")
+st.set_page_config(page_title="Évaluer et enseigner en 1P-2P", layout="wide")
+st.title("Évaluer et enseigner en 1P-2P")
 
 # --- Formulaire d’observation dynamique ---
 for domaine, data in domaines.items():
@@ -234,8 +250,16 @@ for domaine, data in domaines.items():
         for comp_name, criteres in data["composantes"].items():
             with st.expander(f"🟢 **Composante : {comp_name}**", expanded=False):
                 for crit_name, detail in criteres.items():
-                    with st.expander(f"🔹 **Critère : {crit_name}**", expanded=False):
-                        
+                    # Critère avec indication du code PER
+                    code_per = detail.get("code_per", "")
+                    crit_col, code_col = st.columns([20, 1])
+                    with crit_col:
+                        crit_expander = st.expander(f"🔹 **Critère : {crit_name}**", expanded=False)
+                    with code_col:
+                        if code_per:
+                            st.markdown(f'<span style="color:red; font-weight:bold; font-size:1rem;">{code_per}</span>', unsafe_allow_html=True)
+                    
+                    with crit_expander:
                         # Section déplacée dans l'onglet Enseigner
 
                         tab_enseigner, tab_evaluer = st.tabs(["🧑‍🏫 Enseigner", "👀 Évaluer"])
@@ -260,13 +284,33 @@ for domaine, data in domaines.items():
                                 # Marqueur pour cibler uniquement ces onglets via CSS
                                 st.markdown("<div class='ctx-tabs-marker'></div>", unsafe_allow_html=True)
                                 tabs_ctx = st.tabs([f"{icones_contextes.get(c, '•')} {c}" for c in contextes_disponibles])
+                                # Mapping activités vers MER (à compléter selon vos liens réels)
+                                liens_mer = {
+                                    "Parcours entre les tables en sautant à cloche-pied": "https://www.plandetudes.ch/mer",
+                                    "Jeu du flamant rose (tenir la position)": "https://www.plandetudes.ch/mer",
+                                    "Course entre les chaises avec arrêt au signal": "https://www.plandetudes.ch/mer",
+                                }
+                                logo_mer_path = Path(__file__).parent / "images" / "mer.png"
+                                logo_mer_b64 = img_to_base64(logo_mer_path)
+                                
                                 for t, c in zip(tabs_ctx, contextes_disponibles):
                                     with t:
                                         activites = detail["Activités par contexte"][c]
-                                        st.markdown("Sélectionnez l’activité réalisée :")
+                                        st.markdown("Sélectionnez l'activité réalisée :")
                                         for idx, act in enumerate(activites):
                                             key_act = f"act_{domaine}_{comp_name}_{crit_name}_{c}_{idx}"
-                                            st.checkbox(act, key=key_act)
+                                            # Si l'activité a un lien MER, afficher avec logo cliquable
+                                            if act in liens_mer:
+                                                chk_col, mer_col = st.columns([12, 1])
+                                                with chk_col:
+                                                    st.checkbox(act, key=key_act)
+                                                with mer_col:
+                                                    st.markdown(
+                                                        f'<a href="{liens_mer[act]}" target="_blank"><img src="data:image/png;base64,{logo_mer_b64}" width="56" title="Voir sur le MER"/></a>',
+                                                        unsafe_allow_html=True
+                                                    )
+                                            else:
+                                                st.checkbox(act, key=key_act)
                                         autre_key = f"autre_act_{domaine}_{comp_name}_{crit_name}_{c}"
                                         st.text_input("Autre activité (facultatif)", key=autre_key)
 
@@ -434,7 +478,7 @@ with st.sidebar:
             pdf_buffer.seek(0)
 
             st.download_button(
-                label="Télécharger le rapport PDF",
+                label="Télécharger un rapport PDF",
                 data=pdf_buffer,
                 file_name=f"rapport_seance_{date_filename}.pdf",
                 mime="application/pdf"
