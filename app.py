@@ -284,23 +284,34 @@ with st.sidebar:
                 pdf_buffer = BytesIO()
                 pdf = FPDF()
                 pdf.set_auto_page_break(auto=True, margin=15)
+                pdf.set_margins(15, 15, 15)
+                # Fonts: try Unicode TrueType to support accents, guillemets, ≥, …
+                try:
+                    pdf.add_font("ArialUnicode", "", "C:\\Windows\\Fonts\\arial.ttf", uni=True)
+                    pdf.add_font("ArialUnicode", "B", "C:\\Windows\\Fonts\\arialbd.ttf", uni=True)
+                    base_font = "ArialUnicode"
+                except Exception:
+                    # Fallback to core font if system fonts are unavailable
+                    base_font = "Helvetica"
                 pdf.add_page()
-                pdf.set_font("Arial", "B", 16)
+                pdf.set_font(base_font, "B", 16)
                 pdf.cell(0, 10, "Rapport de la séance", ln=True, align="C")
                 pdf.ln(10)
 
-                pdf.set_font("Arial", "", 12)
+                pdf.set_font(base_font, "", 12)
+                pdf.set_x(pdf.l_margin)
+                content_width = getattr(pdf, "epw", pdf.w - pdf.l_margin - pdf.r_margin)
                 for obs in st.session_state.observations:
-                    pdf.multi_cell(0, 8, f"Domaine: {obs['Domaine']}")
-                    pdf.multi_cell(0, 8, f"Composante: {obs['Composante']}")
-                    pdf.multi_cell(0, 8, f"Critère: {obs['Critère']}")
-                    pdf.multi_cell(0, 8, f"Mode: {obs['Mode']}")
-                    pdf.multi_cell(0, 8, f"Observables: {', '.join(obs['Observables'])}")
+                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Domaine: {obs['Domaine']}", align='L')
+                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Composante: {obs['Composante']}", align='L')
+                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Critère: {obs['Critère']}", align='L')
+                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Mode: {obs['Mode']}", align='L')
+                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Observables: {', '.join(obs['Observables'])}", align='L')
                     if obs["Commentaire"]:
-                        pdf.multi_cell(0, 8, f"Commentaire: {obs['Commentaire']}")
+                        pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Commentaire: {obs['Commentaire']}", align='L')
                     pdf.ln(5)
 
-                pdf_output = pdf.output(dest='S').encode('latin1')
+                pdf_output = bytes(pdf.output(dest='S'))
                 pdf_buffer.write(pdf_output)
                 pdf_buffer.seek(0)
 
