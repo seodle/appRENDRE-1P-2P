@@ -244,7 +244,7 @@ for domaine, data in domaines.items():
 
                             st.markdown("#### 🧠 Compétences transversales & Processus cognitifs")
                             st.markdown(f"- **Compétences transversales mobilisables** : {', '.join(detail['compétences_transversales'])}")
-                            st.markdown(f"- **Processus cognitifs mobilisables** : {', '.join(detail['processus_cognitifs'])}")
+                            st.markdown(f"- **Processus cognitifs que l'on peut renforcer** : {', '.join(detail['processus_cognitifs'])}")
                             st.markdown("#### 🎯 Idées d'activités pédagogiques")
                             # Espace visuel avant les onglets de lieux
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
@@ -263,8 +263,12 @@ for domaine, data in domaines.items():
                                 for t, c in zip(tabs_ctx, contextes_disponibles):
                                     with t:
                                         activites = detail["Activités par contexte"][c]
-                                        for act in activites:
-                                            st.markdown(f"- {act}")
+                                        st.markdown("Sélectionnez l’activité réalisée :")
+                                        for idx, act in enumerate(activites):
+                                            key_act = f"act_{domaine}_{comp_name}_{crit_name}_{c}_{idx}"
+                                            st.checkbox(act, key=key_act)
+                                        autre_key = f"autre_act_{domaine}_{comp_name}_{crit_name}_{c}"
+                                        st.text_input("Autre activité (facultatif)", key=autre_key)
 
                         with tab_evaluer:
                             st.subheader("Observables")
@@ -332,6 +336,16 @@ for domaine, data in domaines.items():
                             # Bouton de validation
                             if st.button("✅ Valider cette observation", key=f"valider_{domaine}_{comp_name}_{crit_name}"):
                                 if selected_observables:
+                                    # Récupérer activités cochées ou saisies
+                                    selected_activities = []
+                                    for c in contextes_disponibles:
+                                        acts = detail["Activités par contexte"][c]
+                                        for idx, act in enumerate(acts):
+                                            if st.session_state.get(f"act_{domaine}_{comp_name}_{crit_name}_{c}_{idx}"):
+                                                selected_activities.append(act)
+                                        autre_val = st.session_state.get(f"autre_act_{domaine}_{comp_name}_{crit_name}_{c}", "").strip()
+                                        if autre_val:
+                                            selected_activities.append(autre_val)
                                     obs_entry = {
                                         "Domaine": domaine,
                                         "Composante": comp_name,
@@ -339,6 +353,7 @@ for domaine, data in domaines.items():
                                         "Mode": "Selon sélection (classe/élèves)",
                                         "Observables": selected_observables.copy(),
                                         "Commentaire": commentaire or "",
+                                        "Activités": selected_activities,
                                         "Compétence_mise_en_avant": (comp_selected if comp_selected != "—" else ""),
                                         "Processus_mis_en_avant": (proc_selected if proc_selected != "—" else "")
                                     }
@@ -356,6 +371,10 @@ with st.sidebar:
                     st.markdown(f"**Observables** :")
                     for o in obs["Observables"]:
                         st.markdown(f"- {o}")
+                    if obs.get("Activités"):
+                        st.markdown("**Activités réalisées** :")
+                        for a in obs["Activités"]:
+                            st.markdown(f"- {a}")
                     if obs["Commentaire"]:
                         st.markdown(f"**Commentaire** : {obs['Commentaire']}")
                     if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
@@ -395,7 +414,8 @@ with st.sidebar:
                 pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Domaine: {obs['Domaine']}", align='L')
                 pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Composante: {obs['Composante']}", align='L')
                 pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Critère: {obs['Critère']}", align='L')
-                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Mode: {obs['Mode']}", align='L')
+                if obs.get("Activités"):
+                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Activités réalisées: {', '.join(obs['Activités'])}", align='L')
                 pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Observables: {', '.join(obs['Observables'])}", align='L')
                 if obs["Commentaire"]:
                     pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Commentaire: {obs['Commentaire']}", align='L')
