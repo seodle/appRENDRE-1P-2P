@@ -303,7 +303,7 @@ with st.sidebar:
             content_width = getattr(pdf, "epw", pdf.w - pdf.l_margin - pdf.r_margin)
             # Date du rapport
             date_str = datetime.now().strftime("%d/%m/%Y")
-            date_filename = datetime.now().strftime("%Y-%m-%d")
+            date_filename = datetime.now().strftime("%Y-%m-%d_%H-%M")
             pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Date: {date_str}", align='L')
             pdf.ln(5)
             for obs in st.session_state.observations:
