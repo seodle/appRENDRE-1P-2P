@@ -520,41 +520,39 @@ for domaine, data in domaines.items():
                             selected_observables = []
                             for obs in observables:
                                 st.markdown(f"**{obs}**")
-                                slider_col, _ = st.columns([4, 8])
-                                with slider_col:
-                                    value = st.select_slider(
-                                        "",
-                                        options=scale_options,
-                                        key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating",
-                                        label_visibility="collapsed"
-                                    )
                                 apply_mode = st.selectbox(
                                     "Appliquer à",
                                     ("Toute la classe", "Élèves particuliers"),
                                     key=f"apply_{domaine}_{comp_name}_{crit_name}_{obs}"
                                 )
                                 if apply_mode == "Toute la classe":
-                                    selected_observables.append(f"{value} - {obs}")
-                                else:
-                                    # Liste dynamique d'élèves par observable
-                                    list_key = f"eleves_list_{domaine}_{comp_name}_{crit_name}_{obs}"
-                                    input_key = f"eleves_input_{domaine}_{comp_name}_{crit_name}_{obs}"
-                                    if list_key not in st.session_state:
-                                        st.session_state[list_key] = []
-                                    st.text_input(
-                                        "Ajouter un élève (Entrée pour valider)",
-                                        key=input_key,
-                                        on_change=add_student_to_list,
-                                        args=(list_key, input_key)
-                                    )
-                                    # Affichage compact des élèves saisis
-                                    if st.session_state[list_key]:
-                                        st.markdown(
-                                            ", ".join(st.session_state[list_key])
+                                    slider_col, _ = st.columns([4, 8])
+                                    with slider_col:
+                                        class_value = st.select_slider(
+                                            "",
+                                            options=scale_options,
+                                            key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class",
+                                            label_visibility="collapsed"
                                         )
-                                    # Enregistrer une entrée par élève
-                                    for eleve in st.session_state[list_key]:
-                                        selected_observables.append(f"{eleve}: {value} - {obs}")
+                                    selected_observables.append(f"{class_value} - {obs}")
+                                else:
+                                    # Saisie de plusieurs élèves séparés par des virgules et une échelle par élève
+                                    names_key = f"eleves_bulk_{domaine}_{comp_name}_{crit_name}_{obs}"
+                                    names_str = st.text_input(
+                                        "Prénoms des élèves (séparés par des virgules)",
+                                        key=names_key
+                                    )
+                                    names_list = [n.strip() for n in (names_str or "").split(",") if n.strip()]
+                                    if names_list:
+                                        st.caption(", ".join(names_list))
+                                    for eleve in names_list:
+                                        safe = eleve.replace(" ", "_")
+                                        eleve_value = st.select_slider(
+                                            eleve,
+                                            options=scale_options,
+                                            key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_{safe}",
+                                        )
+                                        selected_observables.append(f"{eleve}: {eleve_value} - {obs}")
 
                             # Commentaire (placé avant la section Mise en avant)
                             comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
