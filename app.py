@@ -5,14 +5,112 @@ from datetime import datetime
 from pathlib import Path
 import base64
 
+# --- PDF amélioré avec en-tête/pied-de-page et éléments graphiques ---
+class CustomPDF(FPDF):
+    def __init__(self, teacher_name: str = "", *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.maitre = teacher_name
+        self.first_page = True
+        self.images_dir = Path(__file__).parent / "images"
+
+    def rounded_rect(self, x, y, w, h, r=5, style='DF'):
+        k = self.k
+        hp = self.h
+        if style == 'F':
+            op = 'f'
+        elif style in ['FD', 'DF']:
+            op = 'B'
+        else:
+            op = 'S'
+        my_arc = 4/3*(2**0.5 - 1)
+        # start top-left corner
+        self._out("%.2f %.2f m" % ((x + r) * k, (hp - y) * k))
+        # top edge
+        self._out("%.2f %.2f l" % ((x + w - r) * k, (hp - y) * k))
+        # top-right corner arc
+        self._Arc(x + w - r + my_arc * r, y, x + w, y + r - my_arc * r, x + w, y + r)
+        # right edge
+        self._out("%.2f %.2f l" % (((x + w) * k), (hp - (y + h - r)) * k))
+        # bottom-right corner arc
+        self._Arc(x + w, y + h - r + my_arc * r, x + w - r + my_arc * r, y + h, x + w - r, y + h)
+        # bottom edge
+        self._out("%.2f %.2f l" % (((x + r) * k), (hp - (y + h)) * k))
+        # bottom-left corner arc
+        self._Arc(x + r - my_arc * r, y + h, x, y + h - r + my_arc * r, x, y + h - r)
+        # left edge
+        self._out("%.2f %.2f l" % (x * k, (hp - (y + r)) * k))
+        # top-left corner arc
+        self._Arc(x, y + r - my_arc * r, x + r - my_arc * r, y, x + r, y)
+        self._out(op)
+
+    def _Arc(self, x1, y1, x2, y2, x3, y3):
+        h = self.h
+        self._out(
+            "%.2f %.2f %.2f %.2f %.2f %.2f c" % (
+                x1 * self.k,
+                (h - y1) * self.k,
+                x2 * self.k,
+                (h - y2) * self.k,
+                x3 * self.k,
+                (h - y3) * self.k,
+            )
+        )
+
+    def header(self):
+        if not self.first_page:
+            return
+        # Logos et visuels si disponibles
+        logo = self.images_dir / "logo_geneve2.png"
+        garcon = self.images_dir / "eleve_garcon.png"
+        fille = self.images_dir / "eleve_fille.png"
+        if logo.exists():
+            self.image(str(logo), x=10, y=3, w=15)
+        if garcon.exists():
+            self.image(str(garcon), x=45, y=7.3, w=20)
+        if fille.exists():
+            self.image(str(fille), x=135, y=6.3, w=20)
+
+        # Titre centré
+        self.set_font("Arial", "B", 20)
+        self.set_xy(0, 10)
+        self.cell(0, 10, "Fichet de séance", align="C")   
+
+        # (Nom enseignant non affiché)
+
+        # Bannière
+        x_rect, y_rect, w_rect, h_rect, radius = 10, 30, 190, 15, 5
+        self.set_fill_color(0, 173, 239)
+        self.set_draw_color(0, 173, 239)
+        self.set_text_color(255, 255, 255)
+        self.set_font("Arial", "B", 16)
+        self.rounded_rect(x_rect, y_rect, w_rect, h_rect, r=radius, style='DF')
+        self.set_xy(x_rect, y_rect + 3)
+        self.cell(w_rect, h_rect - 6, "Synthèse des informations", 0, 0, "C")
+
+        # Reset couleur texte et marquer fin de première page
+        self.set_text_color(0, 0, 0)
+        self.ln(20)
+        self.first_page = False
+
+    def footer(self):
+        # Positionnement depuis le bas
+        self.set_y(-25)
+        self.set_font("Arial", "", 9)
+        self.cell(0, 4, "Direction générale de l'enseignement obligatoire", 0, 1, "C")
+        self.cell(0, 4, "Service enseignement et évaluation", 0, 1, "C")
+        # Pagination
+        self.set_y(-15)
+        self.set_font("Arial", "I", 9)
+        self.cell(0, 10, f"{self.page_no()}/{{nb}}", 0, 0, "R")
+
 # --- Données enrichies avec les 7 domaines, compétences transversales et processus cognitifs ---
 domaines = {
     "Corps et motricité": {
         "icon": "🏃",
         "composantes": {
             "Motricité globale": {
-                "Sauter sur un pied": {
-                    "code_per": "CM 11",
+                "Découverte, exploration de l'espace et orientation en variant les points de référence (son propre corps, d'autres personnes, d'autres objets,…)": {
+                    "code_per": "MSN 11",
                     "Activités par contexte": {
                         "En classe": ["Parcours entre les tables en sautant à cloche-pied", "Jeu du flamant rose (tenir la position)"],
                         "Sur le banc": ["Sauter d'un banc à l'autre (faible hauteur)", "Équilibre sur un pied pendant 5 secondes"],
@@ -24,8 +122,8 @@ domaines = {
                     "compétences_transversales": ["Persévérance", "Estime de soi", "Régulation émotionnelle"],
                     "processus_cognitifs": ["Attention soutenue", "Contrôle inhibiteur", "Planification motrice"]
                 },
-                "Courir et s'arrêter": {
-                    "code_per": "CM 12",
+                "Détermination de sa position ou de celle d'un objet (devant, derrière, à côté, sur, sous, entre, à l'intérieur, à l'extérieur,…) selon différents points de repères": {
+                    "code_per": "MSN 11",
                     "Activités par contexte": {
                         "En classe": ["Course entre les chaises avec arrêt au signal", "Jeu du feu vert/feu rouge"],
                         "Sur le banc": ["Marche rapide puis arrêt net", "Déplacement contrôlé"],
@@ -434,59 +532,78 @@ with st.sidebar:
                         if obs.get("Processus_mis_en_avant"):
                             st.markdown(f"- Processus cognitif : {obs['Processus_mis_en_avant']}")
             
-            # Génération et téléchargement PDF
+            # Génération et téléchargement PDF (version améliorée)
             pdf_buffer = BytesIO()
-            pdf = FPDF()
+            pdf = CustomPDF()
             pdf.set_auto_page_break(auto=True, margin=15)
             pdf.set_margins(15, 15, 15)
-            # Fonts: try Unicode TrueType to support accents, guillemets, ≥, …
+            pdf.alias_nb_pages()
+            # Fonts: try Unicode TrueType to support accents
             try:
                 pdf.add_font("ArialUnicode", "", "C:\\Windows\\Fonts\\arial.ttf", uni=True)
                 pdf.add_font("ArialUnicode", "B", "C:\\Windows\\Fonts\\arialbd.ttf", uni=True)
                 base_font = "ArialUnicode"
             except Exception:
-                # Fallback to core font if system fonts are unavailable
                 base_font = "Helvetica"
             pdf.add_page()
-            pdf.set_font(base_font, "B", 16)
-            pdf.cell(0, 10, "Rapport de la séance", ln=True, align="C")
-            pdf.ln(10)
 
-            pdf.set_font(base_font, "", 12)
-            pdf.set_x(pdf.l_margin)
             content_width = getattr(pdf, "epw", pdf.w - pdf.l_margin - pdf.r_margin)
-            # Date du rapport
+            pdf.set_font(base_font, "", 12)
             date_str = datetime.now().strftime("%d/%m/%Y")
             date_filename = datetime.now().strftime("%Y-%m-%d_%H-%M")
-            pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Date: {date_str}", align='L')
-            pdf.ln(5)
+            # Date juste après la bannière, sans libellé
+            pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 7, date_str)
+            pdf.ln(3)
+
+            # Observations
             for obs in st.session_state.observations:
-                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Domaine: {obs['Domaine']}", align='L')
-                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Composante: {obs['Composante']}", align='L')
-                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Critère: {obs['Critère']}", align='L')
+                # Début du bloc avec encadrement
+                x_box = pdf.l_margin
+                y_box = pdf.get_y()
+                # Titre d'observation (bandeau cyan)
+                pdf.set_font(base_font, "B", 13)
+                pdf.set_text_color(255, 255, 255)
+                pdf.set_fill_color(0, 173, 239)
+                pdf.cell(0, 8, obs['Critère'], 0, 1, 'L', fill=True)
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font(base_font, "", 11)
+                pdf.ln(2)
+
+                # Caractéristiques avec libellés en gras
+                pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Domaine: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Domaine'] or "") + "\n")
+                pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Composante: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Composante'] or "") + "\n")
+                pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Mode: "); pdf.set_font(base_font, "", 11); pdf.write(6, (obs['Mode'] or "") + "\n")
                 if obs.get("Activités"):
-                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Activités réalisées: {', '.join(obs['Activités'])}", align='L')
-                pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Observables: {', '.join(obs['Observables'])}", align='L')
-                if obs["Commentaire"]:
-                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"Commentaire: {obs['Commentaire']}", align='L')
-                # Section mise en avant
+                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Activités réalisées: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Activités']) + "\n")
+                if obs.get("Observables"):
+                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Observables: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Observables']) + "\n")
+                if obs.get("Commentaire"):
+                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: "); pdf.set_font(base_font, "", 11); pdf.write(6, obs['Commentaire'] + "\n")
                 if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
-                    pdf.ln(2)
-                    pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, "Mise en avant:", align='L')
+                    pdf.ln(1)
+                    pdf.set_x(pdf.l_margin); pdf.set_font(base_font, "B", 11); pdf.write(6, "Mise en avant\n")
+                    pdf.set_font(base_font, "", 11)
                     if obs.get("Compétence_mise_en_avant"):
-                        pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"- Compétence transversale: {obs['Compétence_mise_en_avant']}", align='L')
+                        pdf.set_x(pdf.l_margin); pdf.write(6, f"- Compétence transversale: {obs['Compétence_mise_en_avant']}\n")
                     if obs.get("Processus_mis_en_avant"):
-                        pdf.set_x(pdf.l_margin); pdf.multi_cell(content_width, 8, f"- Processus cognitif: {obs['Processus_mis_en_avant']}", align='L')
-                pdf.ln(5)
+                        pdf.set_x(pdf.l_margin); pdf.write(6, f"- Processus cognitif: {obs['Processus_mis_en_avant']}\n")
+
+                # Encadrement arrondi autour du bloc
+                y_after = pdf.get_y()
+                box_w = content_width
+                box_h = y_after - y_box
+                pdf.set_draw_color(0, 0, 0)
+                pdf.rounded_rect(x_box, y_box, box_w, box_h, r=3, style='D')
+                pdf.ln(4)
 
             pdf_output = bytes(pdf.output(dest='S'))
             pdf_buffer.write(pdf_output)
             pdf_buffer.seek(0)
 
             st.download_button(
-                label="Télécharger un rapport PDF",
+                label="Télécharger le rapport PDF",
                 data=pdf_buffer,
-                file_name=f"rapport_seance_{date_filename}.pdf",
+                file_name=f"fichet_{date_filename}.pdf",
                 mime="application/pdf"
             )
         else:
