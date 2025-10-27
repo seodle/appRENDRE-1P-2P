@@ -362,20 +362,42 @@ def img_to_base64(img_path: Path) -> str:
     except Exception:
         return ""
 
-# --- Bouton flèche fixe en haut à droite ---
-st.markdown(
-    """
-    <style>
-    .fixed-arrow {
-        position: fixed;
-        top: 10px;
-        right: 10px;
-        z-index: 999;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# --- CSS pour le bouton et les expanders ---
+st.markdown("""
+<style>
+/* Bouton stylisé */
+.big-color-button {
+    background-color: #1f77b4;  /* couleur personnalisée */
+    color: white !important;
+    padding: 20px 40px !important;
+    font-size: 24px !important;
+    border: none !important;
+    border-radius: 10px !important;
+    cursor: pointer;
+    display: inline-block;
+    margin: 20px 0;
+    text-align: center;
+    width: 100%;
+}
+.big-color-button:hover {
+    background-color: #155a8a !important;
+}
+
+/* Supprimer les bordures des expanders */
+[data-testid="stExpander"] details {
+    border: none !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+}
+[data-testid="stExpander"] summary {
+    border: none !important;
+    box-shadow: none !important;
+    background-color: #f8f9fa !important;  /* facultatif : fond clair */
+    padding: 8px 0 !important;
+    font-weight: 600 !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # --- Styles des onglets : plus grands et 50% de largeur chacun ---
 st.markdown(
@@ -785,24 +807,24 @@ with st.sidebar:
                                 break
                         if not matched:
                             class_comments.append(l)
-                if class_comments:
-                    # Faire la ligne vide avec ln() puis conserver le même x
-                    pdf.ln(1)
-                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: ")
-                    pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
-                    if student_comments:
-                        pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (élèves):\n")
+                    if class_comments:
+                        # Faire la ligne vide avec ln() puis conserver le même x
+                        pdf.ln(1)
+                        pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire: ")
+                        pdf.set_font(base_font, "", 11); pdf.write(6, " ".join(class_comments) + "\n")
+                        if student_comments:
+                            pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Commentaire (élèves):\n")
+                            pdf.set_font(base_font, "", 11)
+                            for nm, notes in student_comments.items():
+                                pdf.set_x(frame_x + 4); pdf.write(6, f"- {nm}: {' '.join(notes)}\n")
+                    if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
+                        pdf.ln(1)
+                        pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Compétences transversales et processus cognitifs mis en avant\n")
                         pdf.set_font(base_font, "", 11)
-                        for nm, notes in student_comments.items():
-                            pdf.set_x(frame_x + 4); pdf.write(6, f"- {nm}: {' '.join(notes)}\n")
-                if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
-                    pdf.ln(1)
-                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Compétences transversales et processus cognitifs mis en avant\n")
-                    pdf.set_font(base_font, "", 11)
-                    if obs.get("Compétence_mise_en_avant"):
-                        pdf.set_x(frame_x + 4); pdf.write(6, f"- Compétence transversale: {obs['Compétence_mise_en_avant']}\n")
-                    if obs.get("Processus_mis_en_avant"):
-                        pdf.set_x(frame_x + 4); pdf.write(6, f"- Processus cognitif: {obs['Processus_mis_en_avant']}\n")
+                        if obs.get("Compétence_mise_en_avant"):
+                            pdf.set_x(frame_x + 4); pdf.write(6, f"- Compétence transversale: {obs['Compétence_mise_en_avant']}\n")
+                        if obs.get("Processus_mis_en_avant"):
+                            pdf.set_x(frame_x + 4); pdf.write(6, f"- Processus cognitif: {obs['Processus_mis_en_avant']}\n")
 
                 # Encadrement arrondi autour du bloc
                 y_after = pdf.get_y()
