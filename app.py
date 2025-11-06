@@ -469,7 +469,7 @@ for domaine, data in domaines.items():
                     code_per = detail.get("code_per", "")
                     crit_col, code_col = st.columns([20, 1])
                     with crit_col:
-                        crit_expander = st.expander(f"🔹 **Critère : {crit_name}**", expanded=False)
+                        crit_expander = st.expander(f"🔹 **Apprentissage : {crit_name}**", expanded=False)
                     with code_col:
                         if code_per:
                             st.markdown(f'<span style="color:red; font-weight:bold; font-size:1rem;">{code_per}</span>', unsafe_allow_html=True)
@@ -481,7 +481,7 @@ for domaine, data in domaines.items():
 
                         with tab_enseigner:
 
-                            st.markdown("#### 🎯 Activités pédagogiques mobilisant ce critère")
+                            st.markdown("#### 🎯 Activités pédagogiques mobilisant cet apprentissage")
                             # Espace visuel avant les onglets de lieux
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
                             icones_contextes = {
@@ -664,7 +664,7 @@ for domaine, data in domaines.items():
                                     obs_entry = {
                                         "Domaine": domaine,
                                         "Composante": comp_name,
-                                        "Critère": crit_name,
+                                        "Apprentissage": crit_name,
                                         "Mode": "Selon sélection (classe/élèves)",
                                         "Observables": selected_observables.copy(),
                                         "Commentaire": commentaire or "",
@@ -682,7 +682,8 @@ with st.sidebar:
         st.header("📋 Observations validées")
         if st.session_state.observations:
             for i, obs in enumerate(st.session_state.observations):
-                with st.expander(f"Observation {i+1} - {obs['Critère'][:30]}..."):
+                _title_appr = (obs.get('Apprentissage') or obs.get('Critère') or "")
+                with st.expander(f"Observation {i+1} - {_title_appr[:30]}..."):
                     st.markdown(f"**Domaine** : {obs['Domaine']}")
                     st.markdown(f"**Mode** : {obs['Mode']}")
                     st.markdown(f"**Observables** :")
@@ -744,7 +745,8 @@ with st.sidebar:
                 pdf.set_fill_color(0, 173, 239)
                 title_h = 8
                 # Calcul de la hauteur nécessaire
-                req_h = pdf.calculate_multicell_height(obs['Critère'], content_width - 4, 6)
+                title_text = (obs.get('Apprentissage') or obs.get('Critère') or "")
+                req_h = pdf.calculate_multicell_height(title_text, content_width - 4, 6)
                 # Plus d'espace bas dans le bandeau pour aérer
                 block_h = max(title_h, req_h + 3)
                 # Utiliser un bandeau à coins arrondis en haut uniquement, aligné avec le cadre
@@ -753,7 +755,7 @@ with st.sidebar:
                 pdf.rounded_top_rect(frame_x, y_box, frame_w, block_h, r=3, style='F')
                 # Positionner plus haut (padding haut faible, bas plus large)
                 pdf.set_xy(frame_x + 2, y_box + 1)
-                pdf.multi_cell(frame_w - 4, 6, obs['Critère'])
+                pdf.multi_cell(frame_w - 4, 6, title_text)
                 pdf.set_text_color(0, 0, 0)
                 pdf.set_font(base_font, "", 11)
                 pdf.ln(2)
