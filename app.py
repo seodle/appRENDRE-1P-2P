@@ -481,21 +481,6 @@ for domaine, data in domaines.items():
 
                         with tab_enseigner:
 
-                            st.markdown("#### 🌟 Compétences transversales & Processus cognitifs")
-                            comp_opts = detail["compétences_transversales"]
-                            proc_opts = detail["processus_cognitifs"]
-                            comp_key_mob = f"comp_mobil_{domaine}_{comp_name}_{crit_name}"
-                            proc_key_mob = f"proc_mobil_{domaine}_{comp_name}_{crit_name}"
-                            st.multiselect(
-                                "Compétences transversales que vous souhaitez mobiliser",
-                                comp_opts,
-                                key=comp_key_mob,
-                            )
-                            st.multiselect(
-                                "Processus cognitifs que vous souhaitez mobiliser",
-                                proc_opts,
-                                key=proc_key_mob,
-                            )
                             st.markdown("#### 🎯 Activités pédagogiques mobilisant ce critère")
                             # Espace visuel avant les onglets de lieux
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
@@ -540,6 +525,26 @@ for domaine, data in domaines.items():
                                                 st.checkbox(act, key=key_act)
                                         autre_key = f"autre_act_{domaine}_{comp_name}_{crit_name}_{c}"
                                         st.text_input("Autre activité (facultatif)", key=autre_key)
+
+                            # Sélection séparée des compétences transversales et des processus cognitifs
+                            comp_opts = detail["compétences_transversales"]
+                            proc_opts = detail["processus_cognitifs"]
+                            comp_key_mob = f"comp_mobil_{domaine}_{comp_name}_{crit_name}"
+                            proc_key_mob = f"proc_mobil_{domaine}_{comp_name}_{crit_name}"
+
+                            st.markdown("#### 🌟 Compétences transversales à mobiliser")
+                            st.multiselect(
+                                "Sélectionnez les compétences transversales",
+                                comp_opts,
+                                key=comp_key_mob,
+                            )
+
+                            st.markdown("#### 🧠 Processus cognitifs à mobiliser")
+                            st.multiselect(
+                                "Sélectionnez les processus cognitifs",
+                                proc_opts,
+                                key=proc_key_mob,
+                            )
 
                         with tab_evaluer:
                             st.subheader("Observables")
