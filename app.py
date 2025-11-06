@@ -482,8 +482,20 @@ for domaine, data in domaines.items():
                         with tab_enseigner:
 
                             st.markdown("#### 🌟 Compétences transversales & Processus cognitifs")
-                            st.markdown(f"- **Compétences transversales mobilisables** : {', '.join(detail['compétences_transversales'])}")
-                            st.markdown(f"- **Processus cognitifs que l'on peut renforcer** : {', '.join(detail['processus_cognitifs'])}")
+                            comp_opts = detail["compétences_transversales"]
+                            proc_opts = detail["processus_cognitifs"]
+                            comp_key_mob = f"comp_mobil_{domaine}_{comp_name}_{crit_name}"
+                            proc_key_mob = f"proc_mobil_{domaine}_{comp_name}_{crit_name}"
+                            st.multiselect(
+                                "Compétences transversales que vous souhaitez mobiliser",
+                                comp_opts,
+                                key=comp_key_mob,
+                            )
+                            st.multiselect(
+                                "Processus cognitifs que vous souhaitez mobiliser",
+                                proc_opts,
+                                key=proc_key_mob,
+                            )
                             st.markdown("#### 🎯 Activités pédagogiques mobilisant ce critère")
                             # Espace visuel avant les onglets de lieux
                             contextes = ["En classe", "Sur le banc", "Jeu à faire semblant", "Dehors", "Autres"]
@@ -603,6 +615,9 @@ for domaine, data in domaines.items():
                                         autre_val = st.session_state.get(f"autre_act_{domaine}_{comp_name}_{crit_name}_{c}", "").strip()
                                         if autre_val:
                                             selected_activities.append(autre_val)
+                                    # Récupérer compétences/processus mobilisés (onglet Enseigner)
+                                    comp_mobilisees = st.session_state.get(comp_key_mob, [])
+                                    processus_mobilises = st.session_state.get(proc_key_mob, [])
                                     obs_entry = {
                                         "Domaine": domaine,
                                         "Composante": comp_name,
@@ -611,6 +626,8 @@ for domaine, data in domaines.items():
                                         "Observables": selected_observables.copy(),
                                         "Commentaire": commentaire or "",
                                         "Activités": selected_activities,
+                                        "Compétences_mobilisées": comp_mobilisees,
+                                        "Processus_mobilisés": processus_mobilises,
                                         "Compétence_mise_en_avant": (comp_selected if comp_selected != "—" else ""),
                                         "Processus_mis_en_avant": (proc_selected if proc_selected != "—" else "")
                                     }
@@ -632,6 +649,12 @@ with st.sidebar:
                         st.markdown("**Activités réalisées** :")
                         for a in obs["Activités"]:
                             st.markdown(f"- {a}")
+                    if obs.get("Compétences_mobilisées") or obs.get("Processus_mobilisés"):
+                        st.markdown("**Mobilisation prévue** :")
+                        if obs.get("Compétences_mobilisées"):
+                            st.markdown("- Compétences transversales : " + ", ".join(obs["Compétences_mobilisées"]))
+                        if obs.get("Processus_mobilisés"):
+                            st.markdown("- Processus cognitifs : " + ", ".join(obs["Processus_mobilisés"]))
                     if obs["Commentaire"]:
                         st.markdown(f"**Commentaire** : {obs['Commentaire']}")
                     if obs.get("Compétence_mise_en_avant") or obs.get("Processus_mis_en_avant"):
@@ -698,6 +721,10 @@ with st.sidebar:
                 # Suppression de la ligne Mode (inutile)
                 if obs.get("Activités"):
                     pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Activités réalisées: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Activités']) + "\n")
+                if obs.get("Compétences_mobilisées"):
+                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Compétences transversales mobilisées: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Compétences_mobilisées']) + "\n")
+                if obs.get("Processus_mobilisés"):
+                    pdf.set_x(frame_x + 2); pdf.set_font(base_font, "B", 11); pdf.write(6, "Processus cognitifs mobilisés: "); pdf.set_font(base_font, "", 11); pdf.write(6, ", ".join(obs['Processus_mobilisés']) + "\n")
                 # Observables: Likert horizontal avec emoji + habillage
                 if obs.get("Observables"):
                     pdf.ln(1)
