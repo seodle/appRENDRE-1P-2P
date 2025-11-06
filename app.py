@@ -558,61 +558,78 @@ for domaine, data in domaines.items():
                             ]
                             selected_observables = []
                             for obs in observables:
-                                st.markdown(f"**{obs}**")
-                                apply_mode = st.selectbox(
-                                    "Appliquer à",
-                                    ("Toute la classe", "Élèves particuliers", "Tous les élèves sauf..."),
-                                    key=f"apply_{domaine}_{comp_name}_{crit_name}_{obs}"
-                                )
-                                if apply_mode == "Toute la classe":
-                                    slider_col, _ = st.columns([4, 8])
-                                    with slider_col:
-                                        class_value = st.select_slider(
-                                            "",
-                                            options=scale_options,
-                                            key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class",
-                                            label_visibility="collapsed"
-                                        )
-                                    selected_observables.append(f"{class_value} - {obs}")
-                                elif apply_mode == "Élèves particuliers":
-                                    # Saisie de plusieurs élèves séparés par des virgules et une échelle par élève
-                                    names_key = f"eleves_bulk_{domaine}_{comp_name}_{crit_name}_{obs}"
-                                    names_str = st.text_input(
-                                        "Prénoms des élèves (séparés par des virgules)",
-                                        key=names_key
+                                # En-tête + boutons d'ajout/suppression d'occurrence
+                                head_col, add_col, rem_col = st.columns([10, 1, 1])
+                                with head_col:
+                                    st.markdown(f"**{obs}**")
+                                # Compteur d'occurrences dans l'état
+                                count_key = f"occ_count_{domaine}_{comp_name}_{crit_name}_{obs}"
+                                if count_key not in st.session_state:
+                                    st.session_state[count_key] = 1
+                                with add_col:
+                                    if st.button("➕", key=f"add_occ_{domaine}_{comp_name}_{crit_name}_{obs}"):
+                                        st.session_state[count_key] = min(st.session_state[count_key] + 1, 10)
+                                with rem_col:
+                                    if st.button("➖", key=f"rem_occ_{domaine}_{comp_name}_{crit_name}_{obs}"):
+                                        st.session_state[count_key] = max(1, st.session_state[count_key] - 1)
+
+                                # Rendu des occurrences
+                                for occ_idx in range(st.session_state[count_key]):
+                                    st.caption(f"Occurrence {occ_idx + 1}")
+                                    apply_mode = st.selectbox(
+                                        "Appliquer à",
+                                        ("Toute la classe", "Élèves particuliers", "Tous les élèves sauf..."),
+                                        key=f"apply_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
                                     )
-                                    names_list = [n.strip() for n in (names_str or "").split(",") if n.strip()]
-                                    if names_list:
-                                        st.caption(", ".join(names_list))
-                                    for eleve in names_list:
-                                        safe = eleve.replace(" ", "_")
-                                        eleve_value = st.select_slider(
-                                            eleve,
-                                            options=scale_options,
-                                            key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_{safe}",
+                                    if apply_mode == "Toute la classe":
+                                        slider_col, _ = st.columns([4, 8])
+                                        with slider_col:
+                                            class_value = st.select_slider(
+                                                "",
+                                                options=scale_options,
+                                                key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_{occ_idx}",
+                                                label_visibility="collapsed"
+                                            )
+                                        selected_observables.append(f"{class_value} - {obs}")
+                                    elif apply_mode == "Élèves particuliers":
+                                        # Saisie de plusieurs élèves séparés par des virgules et une échelle par élève
+                                        names_key = f"eleves_bulk_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
+                                        names_str = st.text_input(
+                                            "Prénoms des élèves (séparés par des virgules)",
+                                            key=names_key
                                         )
-                                        selected_observables.append(f"{eleve}: {eleve_value} - {obs}")
-                                else:
-                                    # Tous les élèves sauf...
-                                    excl_key = f"excl_eleves_{domaine}_{comp_name}_{crit_name}_{obs}"
-                                    excl_str = st.text_input(
-                                        "Prénoms des élèves exclus (séparés par des virgules)",
-                                        key=excl_key
-                                    )
-                                    excl_list = [n.strip() for n in (excl_str or "").split(",") if n.strip()]
-                                    slider_col, _ = st.columns([4, 8])
-                                    with slider_col:
-                                        class_except_value = st.select_slider(
-                                            "",
-                                            options=scale_options,
-                                            key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_except",
-                                            label_visibility="collapsed"
-                                        )
-                                    if excl_list:
-                                        excl_txt = ", ".join(excl_list)
-                                        selected_observables.append(f"Classe (sauf {excl_txt}): {class_except_value} - {obs}")
+                                        names_list = [n.strip() for n in (names_str or "").split(",") if n.strip()]
+                                        if names_list:
+                                            st.caption(", ".join(names_list))
+                                        for eleve in names_list:
+                                            safe = eleve.replace(" ", "_")
+                                            eleve_value = st.select_slider(
+                                                eleve,
+                                                options=scale_options,
+                                                key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_{safe}_{occ_idx}",
+                                            )
+                                            selected_observables.append(f"{eleve}: {eleve_value} - {obs}")
                                     else:
-                                        selected_observables.append(f"{class_except_value} - {obs}")
+                                        # Tous les élèves sauf...
+                                        excl_key = f"excl_eleves_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
+                                        excl_str = st.text_input(
+                                            "Prénoms des élèves exclus (séparés par des virgules)",
+                                            key=excl_key
+                                        )
+                                        excl_list = [n.strip() for n in (excl_str or "").split(",") if n.strip()]
+                                        slider_col, _ = st.columns([4, 8])
+                                        with slider_col:
+                                            class_except_value = st.select_slider(
+                                                "",
+                                                options=scale_options,
+                                                key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_except_{occ_idx}",
+                                                label_visibility="collapsed"
+                                            )
+                                        if excl_list:
+                                            excl_txt = ", ".join(excl_list)
+                                            selected_observables.append(f"Classe (sauf {excl_txt}): {class_except_value} - {obs}")
+                                        else:
+                                            selected_observables.append(f"{class_except_value} - {obs}")
 
                             # Commentaire (placé avant la section Mise en avant)
                             comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
