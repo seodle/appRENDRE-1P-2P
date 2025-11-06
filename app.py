@@ -163,7 +163,7 @@ class CustomPDF(FPDF):
         # Titre centré
         self.set_font("Arial", "B", 20)
         self.set_xy(0, 10)
-        self.cell(0, 10, "Fichet de séance", align="C")
+        self.cell(0, 10, "Observation de séance", align="C")
            
         # Bannière
         x_rect, y_rect, w_rect, h_rect, radius = 10, 30, 190, 15, 5
@@ -561,7 +561,7 @@ for domaine, data in domaines.items():
                                 st.markdown(f"**{obs}**")
                                 apply_mode = st.selectbox(
                                     "Appliquer à",
-                                    ("Toute la classe", "Élèves particuliers"),
+                                    ("Toute la classe", "Élèves particuliers", "Tous les élèves sauf..."),
                                     key=f"apply_{domaine}_{comp_name}_{crit_name}_{obs}"
                                 )
                                 if apply_mode == "Toute la classe":
@@ -574,7 +574,7 @@ for domaine, data in domaines.items():
                                             label_visibility="collapsed"
                                         )
                                     selected_observables.append(f"{class_value} - {obs}")
-                                else:
+                                elif apply_mode == "Élèves particuliers":
                                     # Saisie de plusieurs élèves séparés par des virgules et une échelle par élève
                                     names_key = f"eleves_bulk_{domaine}_{comp_name}_{crit_name}_{obs}"
                                     names_str = st.text_input(
@@ -592,6 +592,27 @@ for domaine, data in domaines.items():
                                             key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_{safe}",
                                         )
                                         selected_observables.append(f"{eleve}: {eleve_value} - {obs}")
+                                else:
+                                    # Tous les élèves sauf...
+                                    excl_key = f"excl_eleves_{domaine}_{comp_name}_{crit_name}_{obs}"
+                                    excl_str = st.text_input(
+                                        "Prénoms des élèves exclus (séparés par des virgules)",
+                                        key=excl_key
+                                    )
+                                    excl_list = [n.strip() for n in (excl_str or "").split(",") if n.strip()]
+                                    slider_col, _ = st.columns([4, 8])
+                                    with slider_col:
+                                        class_except_value = st.select_slider(
+                                            "",
+                                            options=scale_options,
+                                            key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_except",
+                                            label_visibility="collapsed"
+                                        )
+                                    if excl_list:
+                                        excl_txt = ", ".join(excl_list)
+                                        selected_observables.append(f"Classe (sauf {excl_txt}): {class_except_value} - {obs}")
+                                    else:
+                                        selected_observables.append(f"{class_except_value} - {obs}")
 
                             # Commentaire (placé avant la section Mise en avant)
                             comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
