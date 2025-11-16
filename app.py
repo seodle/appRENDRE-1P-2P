@@ -374,7 +374,7 @@ def init_db():
         cur.execute("""
             CREATE TABLE IF NOT EXISTS observations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                teacher_id INTEGER NULL,
+                teacher_id INTEGER NOT NULL,
                 domaine TEXT,
                 composante TEXT,
                 apprentissage TEXT,
@@ -387,7 +387,7 @@ def init_db():
                 competence_mise_en_avant TEXT,
                 processus_mis_en_avant TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL
+                FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
             );
         """)
         cur.execute("""
@@ -480,20 +480,14 @@ def delete_student_db(teacher_id: int, student_id: int) -> tuple[bool, str | Non
     except Exception as e:
         return False, f"Suppression impossible: {e}"
 
-def delete_observation_db(obs_id: int, teacher_id: int | None) -> tuple[bool, str | None]:
+def delete_observation_db(obs_id: int, teacher_id: int) -> tuple[bool, str | None]:
     try:
         with get_conn() as conn:
             cur = conn.cursor()
-            if teacher_id is None:
-                cur.execute(
-                    "DELETE FROM observations WHERE id = ? AND teacher_id IS NULL",
-                    (obs_id,)
-                )
-            else:
-                cur.execute(
-                    "DELETE FROM observations WHERE id = ? AND teacher_id = ?",
-                    (obs_id, teacher_id)
-                )
+            cur.execute(
+                "DELETE FROM observations WHERE id = ? AND teacher_id = ?",
+                (obs_id, teacher_id)
+            )
             if cur.rowcount == 0:
                 return False, "Aucune observation correspondante à supprimer."
             conn.commit()
@@ -501,7 +495,7 @@ def delete_observation_db(obs_id: int, teacher_id: int | None) -> tuple[bool, st
     except Exception as e:
         return False, f"Suppression observation impossible: {e}"
 
-def save_observation_db(obs: dict, teacher_id: int | None) -> tuple[bool, str | None, int | None]:
+def save_observation_db(obs: dict, teacher_id: int) -> tuple[bool, str | None, int | None]:
     try:
         with get_conn() as conn:
             cur = conn.cursor()
@@ -534,6 +528,119 @@ def save_observation_db(obs: dict, teacher_id: int | None) -> tuple[bool, str | 
             return True, None, obs_id
     except Exception as e:
         return False, f"Erreur enregistrement observation: {e}", None
+
+def save_observations_bulk(observations: list[dict], teacher_id: int) -> tuple[bool, str | None, list[int] | None, str | None]:
+    # Enregistre en lot avec le même horodatage pour regroupement
+    try:
+        saved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ids: list[int] = []
+        with get_conn() as conn:
+            cur = conn.cursor()
+            for obs in observations:
+                cur.execute(
+                    """
+                    INSERT INTO observations (
+                        teacher_id, domaine, composante, apprentissage, mode,
+                        observables_json, commentaire, activites_json,
+                        competences_mobilisees_json, processus_mobilises_json,
+                        competence_mise_en_avant, processus_mis_en_avant, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        teacher_id,
+                        obs.get("Domaine"),
+                        obs.get("Composante"),
+                        obs.get("Apprentissage"),
+                        obs.get("Mode"),
+                        json.dumps(obs.get("Observables") or [], ensure_ascii=False),
+                        obs.get("Commentaire") or "",
+                        json.dumps(obs.get("Activités") or [], ensure_ascii=False),
+                        json.dumps(obs.get("Compétences_mobilisées") or [], ensure_ascii=False),
+                        json.dumps(obs.get("Processus_mobilisés") or [], ensure_ascii=False),
+                        obs.get("Compétence_mise_en_avant") or "",
+                        obs.get("Processus_mis_en_avant") or "",
+                        saved_at,
+                    ),
+                )
+                ids.append(cur.lastrowid)
+            conn.commit()
+        return True, None, ids, saved_at
+    except Exception as e:
+        return False, f"Erreur enregistrement en lot: {e}", None, None
+
+def get_observation_timestamps(teacher_id: int) -> list[tuple[str, int]]:
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT created_at, COUNT(*) as n
+                FROM observations
+                WHERE teacher_id = ?
+                GROUP BY created_at
+                ORDER BY created_at DESC
+                """,
+                (teacher_id,),
+            )
+            rows = cur.fetchall()
+            return [(r[0], r[1]) for r in rows]
+    except Exception:
+        return []
+
+def get_observations_by_timestamp(teacher_id: int, created_at: str) -> list[dict]:
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT id, domaine, composante, apprentissage, mode,
+                       observables_json, commentaire, activites_json,
+                       competences_mobilisees_json, processus_mobilises_json,
+                       competence_mise_en_avant, processus_mis_en_avant
+                FROM observations
+                WHERE teacher_id = ? AND created_at = ?
+                ORDER BY id ASC
+                """,
+                (teacher_id, created_at),
+            )
+            rows = cur.fetchall()
+        obs_list: list[dict] = []
+        for r in rows:
+            (oid, domaine, composante, apprentissage, mode, obs_json, com, act_json,
+             comp_json, proc_json, comp_av, proc_av) = r
+            try:
+                observables = json.loads(obs_json) if obs_json else []
+            except Exception:
+                observables = []
+            try:
+                activites = json.loads(act_json) if act_json else []
+            except Exception:
+                activites = []
+            try:
+                comp_mob = json.loads(comp_json) if comp_json else []
+            except Exception:
+                comp_mob = []
+            try:
+                proc_mob = json.loads(proc_json) if proc_json else []
+            except Exception:
+                proc_mob = []
+            obs_list.append({
+                "db_id": oid,
+                "Domaine": domaine or "",
+                "Composante": composante or "",
+                "Apprentissage": apprentissage or "",
+                "Mode": mode or "",
+                "Observables": observables,
+                "Commentaire": com or "",
+                "Activités": activites,
+                "Compétences_mobilisées": comp_mob,
+                "Processus_mobilisés": proc_mob,
+                "Compétence_mise_en_avant": comp_av or "",
+                "Processus_mis_en_avant": proc_av or "",
+            })
+        return obs_list
+    except Exception:
+        return []
 
 # --- Sessions persistantes ---
 def _generate_session_token() -> str:
@@ -641,8 +748,8 @@ def _handle_delete_from_query_params():
     except Exception:
         pass
     changed = False
-    if del_id is not None:
-        current_teacher_id = st.session_state.teacher["id"] if st.session_state.get("teacher") else None
+    if del_id is not None and st.session_state.get("teacher"):
+        current_teacher_id = st.session_state.teacher["id"]
         ok_del, _err_del = delete_observation_db(del_id, current_teacher_id)
         # Retirer de la session si présent
         for j, o in enumerate(list(st.session_state.observations)):
@@ -1174,20 +1281,7 @@ for domaine, data in domaines.items():
                                         "Processus_mis_en_avant": (proc_selected if proc_selected != "—" else "")
                                     }
                                     st.session_state.observations.append(obs_entry)
-                                    st.success("Observation enregistrée !")
-                                    # Sauvegarde en base
-                                    teacher_id = st.session_state.teacher["id"] if st.session_state.get("teacher") else None
-                                    ok_db, err_db, _obs_id = save_observation_db(obs_entry, teacher_id)
-                                    if ok_db:
-                                        # Conserver l'ID DB dans l'observation en session
-                                        obs_entry["db_id"] = _obs_id
-                                        try:
-                                            st.session_state.observations[-1]["db_id"] = _obs_id
-                                        except Exception:
-                                            pass
-                                        st.toast("Observation enregistrée dans la base.", icon="✅")
-                                    else:
-                                        st.warning(err_db or "Impossible d'enregistrer l'observation dans la base.")
+                                    st.success("Observation ajoutée (non enregistrée en base).")
 
 # --- Sidebar dynamique ---
 with st.sidebar:
@@ -1334,6 +1428,50 @@ with st.sidebar:
             else:
                 st.info("Aucun élève enregistré pour l'instant.")
         st.divider()
+        # Charger des observations depuis la base (par date/heure)
+        if st.session_state.teacher:
+            ts_list = get_observation_timestamps(st.session_state.teacher["id"])
+            if ts_list:
+                opts = [f"{ts} ({cnt})" for ts, cnt in ts_list]
+                vals = [ts for ts, _ in ts_list]
+                sel = st.selectbox("Charger des observations enregistrées (date/heure)", options=["—"] + opts, key="obs_load_select")
+                if sel and sel != "—":
+                    idx = opts.index(sel)
+                    chosen_ts = vals[idx]
+                    if st.button("Charger ces observations", key=f"obs_load_btn_{idx}"):
+                        loaded = get_observations_by_timestamp(st.session_state.teacher["id"], chosen_ts)
+                        if loaded:
+                            st.session_state.observations = loaded
+                            st.success(f"{len(loaded)} observation(s) chargée(s) du {chosen_ts}.")
+                            try:
+                                st.rerun()
+                            except Exception:
+                                try:
+                                    st.experimental_rerun()
+                                except Exception:
+                                    pass
+            else:
+                st.info("Aucune observation enregistrée en base pour l'instant.")
+        # Enregistrer les observations courantes en base
+        if st.session_state.teacher and st.session_state.observations:
+            unsaved_idx = [i for i, o in enumerate(st.session_state.observations) if not o.get("db_id")]
+            if unsaved_idx:
+                if st.button("💾 Enregistrer les observations", key="obs_save_all_btn"):
+                    to_save = [st.session_state.observations[i] for i in unsaved_idx]
+                    ok_bulk, err_bulk, ids_bulk, saved_at = save_observations_bulk(to_save, st.session_state.teacher["id"])
+                    if ok_bulk and ids_bulk:
+                        for pos, oid in zip(unsaved_idx, ids_bulk):
+                            st.session_state.observations[pos]["db_id"] = oid
+                        st.success(f"{len(ids_bulk)} observation(s) enregistrée(s) ({saved_at}).")
+                        try:
+                            st.rerun()
+                        except Exception:
+                            try:
+                                st.experimental_rerun()
+                            except Exception:
+                                pass
+                    else:
+                        st.warning(err_bulk or "Enregistrement impossible.")
         st.header("📋 Observations validées")
         if st.session_state.observations:
             for i, obs in enumerate(st.session_state.observations):
@@ -1577,7 +1715,7 @@ with st.sidebar:
             pdf_buffer.seek(0)
 
             st.download_button(
-                label="Télécharger le rapport PDF",
+                label="Télécharger une fiche d'observation",
                 data=pdf_buffer,
                 file_name=f"fichet_{date_filename}.pdf",
                 mime="application/pdf"
