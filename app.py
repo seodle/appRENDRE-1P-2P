@@ -8,6 +8,7 @@ import sqlite3
 import hashlib
 import os
 import json
+from datetime import timedelta
 
 # --- PDF amélioré avec en-tête/pied-de-page et éléments graphiques ---
 class CustomPDF(FPDF):
@@ -389,6 +390,16 @@ def init_db():
                 FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL
             );
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                token TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
+            );
+        """)
         conn.commit()
 
 def _hash_password(password: str, salt_hex: str | None = None) -> tuple[str, str]:
@@ -524,6 +535,62 @@ def save_observation_db(obs: dict, teacher_id: int | None) -> tuple[bool, str | 
     except Exception as e:
         return False, f"Erreur enregistrement observation: {e}", None
 
+# --- Sessions persistantes ---
+def _generate_session_token() -> str:
+    return os.urandom(24).hex()
+
+def create_session_db(teacher_id: int, ttl_days: int = 7) -> tuple[bool, str | None, str | None]:
+    token = _generate_session_token()
+    try:
+        expires_at = (datetime.utcnow() + timedelta(days=ttl_days)).isoformat()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO sessions (teacher_id, token, expires_at) VALUES (?, ?, ?)",
+                (teacher_id, token, expires_at),
+            )
+            conn.commit()
+        return True, None, token
+    except Exception as e:
+        return False, f"Erreur création session: {e}", None
+
+def get_teacher_by_token(token: str) -> tuple[bool, str | None, dict | None]:
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT t.id, t.name, t.email, s.expires_at
+                FROM sessions s
+                JOIN teachers t ON t.id = s.teacher_id
+                WHERE s.token = ?
+                """,
+                (token,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return False, "Session inconnue.", None
+            teacher_id, name, email, expires_at = row
+            # Vérifier expiration
+            try:
+                if datetime.fromisoformat(expires_at) < datetime.utcnow():
+                    return False, "Session expirée.", None
+            except Exception:
+                return False, "Session invalide.", None
+            return True, None, {"id": teacher_id, "name": name, "email": email}
+    except Exception as e:
+        return False, f"Erreur session: {e}", None
+
+def delete_session_db(token: str) -> tuple[bool, str | None]:
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            conn.commit()
+        return True, None
+    except Exception as e:
+        return False, f"Erreur suppression session: {e}"
+
 # Créer la base au démarrage
 init_db()
 
@@ -532,6 +599,8 @@ if "teacher" not in st.session_state:
     st.session_state.teacher = None
 if "students" not in st.session_state:
     st.session_state.students = []
+if "auth_token" not in st.session_state:
+    st.session_state.auth_token = None
 
 # Rafraîchir la liste d'élèves si connecté
 if st.session_state.teacher:
@@ -623,6 +692,41 @@ def _handle_delete_from_query_params():
                 pass
 
 _handle_delete_from_query_params()
+
+# --- Auto-auth depuis paramètre d'URL ---
+def _auto_login_from_query_params():
+    try:
+        params = dict(st.query_params) if hasattr(st, "query_params") else st.experimental_get_query_params()
+    except Exception:
+        params = {}
+    tok = None
+    if params:
+        val = params.get("auth")
+        if isinstance(val, list):
+            val = val[0] if val else None
+        tok = val
+    if tok and not st.session_state.get("teacher"):
+        ok, _err, teacher = get_teacher_by_token(tok)
+        if ok and teacher:
+            st.session_state.teacher = teacher
+            st.session_state.auth_token = tok
+            try:
+                st.session_state.students = list_students_db(teacher["id"])
+            except Exception:
+                st.session_state.students = []
+        else:
+            # Token invalide: le retirer de l'URL
+            try:
+                if hasattr(st, "query_params"):
+                    qp = dict(st.query_params)
+                    qp.pop("auth", None)
+                    st.experimental_set_query_params(**{k: v for k, v in qp.items()})
+                else:
+                    st.experimental_set_query_params()
+            except Exception:
+                pass
+
+_auto_login_from_query_params()
 
 # --- Fonction pour réinitialiser tous les checkboxes ---
 def reset_all_checkboxes():
@@ -777,6 +881,81 @@ with col1:
     st.title("Enseigner et Évaluer en 1P-2P")
 with col2:
     st.markdown(f"<div style='text-align: right; padding-top: 20px; font-size: 1.1rem; color: #666;'>{datetime.now().strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
+
+# --- Garde: accès uniquement si connecté ---
+if not st.session_state.get("teacher"):
+    st.markdown("### Connexion requise")
+    st.info("Veuillez vous connecter ou créer un compte pour accéder à l'application.")
+    tab_login_main, tab_signup_main = st.tabs(["Se connecter", "Créer un compte"])
+    with tab_login_main:
+        email_login_m = st.text_input("Email", key="auth_email_login_main")
+        pwd_login_m = st.text_input("Mot de passe", type="password", key="auth_pwd_login_main")
+        if st.button("Se connecter", key="auth_login_btn_main"):
+            ok, err, teacher = authenticate_teacher(email_login_m, pwd_login_m)
+            if ok:
+                st.session_state.teacher = teacher
+                try:
+                    st.session_state.students = list_students_db(teacher["id"])
+                except Exception:
+                    st.session_state.students = []
+                # Créer session persistante et ajouter dans l'URL
+                ok_sess, _err_sess, token = create_session_db(teacher["id"])
+                if ok_sess and token:
+                    st.session_state.auth_token = token
+                    try:
+                        qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+                    except Exception:
+                        qp = {}
+                    qp = {k: v for k, v in qp.items() if k not in ["del_obs", "del_idx", "del_student"]}
+                    qp["auth"] = token
+                    try:
+                        st.experimental_set_query_params(**qp)
+                    except Exception:
+                        pass
+                st.success("Connecté.")
+                try:
+                    st.rerun()
+                except Exception:
+                    try:
+                        st.experimental_rerun()
+                    except Exception:
+                        pass
+            else:
+                st.error(err or "Connexion impossible.")
+    with tab_signup_main:
+        name_new_m = st.text_input("Nom et prénom", key="auth_name_new_main")
+        email_new_m = st.text_input("Email", key="auth_email_new_main")
+        pwd_new_m = st.text_input("Mot de passe", type="password", key="auth_pwd_new_main")
+        if st.button("Créer mon compte", key="auth_signup_btn_main"):
+            ok, err, teacher = create_teacher(name_new_m, email_new_m, pwd_new_m)
+            if ok:
+                st.session_state.teacher = teacher
+                st.session_state.students = []
+                # Créer session persistante et ajouter dans l'URL
+                ok_sess, _err_sess, token = create_session_db(teacher["id"])
+                if ok_sess and token:
+                    st.session_state.auth_token = token
+                    try:
+                        qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+                    except Exception:
+                        qp = {}
+                    qp = {k: v for k, v in qp.items() if k not in ["del_obs", "del_idx", "del_student"]}
+                    qp["auth"] = token
+                    try:
+                        st.experimental_set_query_params(**qp)
+                    except Exception:
+                        pass
+                st.success("Compte créé et connecté.")
+                try:
+                    st.rerun()
+                except Exception:
+                    try:
+                        st.experimental_rerun()
+                    except Exception:
+                        pass
+            else:
+                st.error(err or "Création impossible.")
+    st.stop()
 
 # --- Formulaire d’observation dynamique ---
 for domaine, data in domaines.items():
@@ -1026,6 +1205,20 @@ with st.sidebar:
                             st.session_state.students = list_students_db(teacher["id"])
                         except Exception:
                             st.session_state.students = []
+                        # Créer session persistante et ajouter dans l'URL
+                        ok_sess, _err_sess, token = create_session_db(teacher["id"])
+                        if ok_sess and token:
+                            st.session_state.auth_token = token
+                            try:
+                                qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+                            except Exception:
+                                qp = {}
+                            qp = {k: v for k, v in qp.items() if k not in ["del_obs", "del_idx", "del_student"]}
+                            qp["auth"] = token
+                            try:
+                                st.experimental_set_query_params(**qp)
+                            except Exception:
+                                pass
                         st.success("Connecté.")
                         try:
                             st.rerun()
@@ -1045,6 +1238,20 @@ with st.sidebar:
                     if ok:
                         st.session_state.teacher = teacher
                         st.session_state.students = []
+                        # Créer session persistante et ajouter dans l'URL
+                        ok_sess, _err_sess, token = create_session_db(teacher["id"])
+                        if ok_sess and token:
+                            st.session_state.auth_token = token
+                            try:
+                                qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+                            except Exception:
+                                qp = {}
+                            qp = {k: v for k, v in qp.items() if k not in ["del_obs", "del_idx", "del_student"]}
+                            qp["auth"] = token
+                            try:
+                                st.experimental_set_query_params(**qp)
+                            except Exception:
+                                pass
                         st.success("Compte créé et connecté.")
                         try:
                             st.rerun()
@@ -1061,8 +1268,25 @@ with st.sidebar:
             cols = st.columns([1,1])
             with cols[0]:
                 if st.button("Se déconnecter", key="auth_logout_btn"):
+                    # Delete session token and clear URL param
+                    tok = st.session_state.get("auth_token")
+                    if tok:
+                        try:
+                            delete_session_db(tok)
+                        except Exception:
+                            pass
+                    st.session_state.auth_token = None
                     st.session_state.teacher = None
                     st.session_state.students = []
+                    try:
+                        if hasattr(st, "query_params"):
+                            qp = dict(st.query_params)
+                            qp.pop("auth", None)
+                            st.experimental_set_query_params(**{k: v for k, v in qp.items()})
+                        else:
+                            st.experimental_set_query_params()
+                    except Exception:
+                        pass
                     try:
                         st.rerun()
                     except Exception:
