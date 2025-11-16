@@ -1453,28 +1453,37 @@ if mode_app == "reporter":
                                 selected_observables.append(f"{class_value} - {obs_text}")
                             
                             elif apply_mode == "Élèves particuliers":
-                                names_str = st.text_input(
-                                    "Prénoms des élèves (séparés par des virgules)",
-                                    key=f"loaded_eleves_{idx}_{obs_text}"
-                                )
-                                names_list = [n.strip() for n in (names_str or "").split(",") if n.strip()]
-                                if names_list:
-                                    st.caption(", ".join(names_list))
-                                    for eleve in names_list:
-                                        safe = eleve.replace(" ", "_")
-                                        eleve_value = st.select_slider(
-                                            eleve,
-                                            options=scale_options,
-                                            key=f"loaded_eleve_val_{idx}_{obs_text}_{safe}"
-                                        )
-                                        selected_observables.append(f"{eleve}: {eleve_value} - {obs_text}")
+                                # Récupérer la liste des élèves
+                                students_names = [s.get("name") for s in st.session_state.get("students", []) or []]
+                                if students_names:
+                                    names_list = st.multiselect(
+                                        "Sélectionnez les élèves",
+                                        options=students_names,
+                                        key=f"loaded_eleves_{idx}_{obs_text}"
+                                    )
+                                    if names_list:
+                                        for eleve in names_list:
+                                            safe = eleve.replace(" ", "_")
+                                            eleve_value = st.select_slider(
+                                                eleve,
+                                                options=scale_options,
+                                                key=f"loaded_eleve_val_{idx}_{obs_text}_{safe}"
+                                            )
+                                            selected_observables.append(f"{eleve}: {eleve_value} - {obs_text}")
+                                else:
+                                    st.warning("Aucun élève enregistré. Ajoutez des élèves dans la sidebar.")
                             
                             elif apply_mode == "Tous les élèves sauf...":
-                                excl_str = st.text_input(
-                                    "Prénoms des élèves exclus (séparés par des virgules)",
-                                    key=f"loaded_excl_{idx}_{obs_text}"
-                                )
-                                excl_list = [n.strip() for n in (excl_str or "").split(",") if n.strip()]
+                                # Récupérer la liste des élèves
+                                students_names = [s.get("name") for s in st.session_state.get("students", []) or []]
+                                if students_names:
+                                    excl_list = st.multiselect(
+                                        "Élèves à exclure",
+                                        options=students_names,
+                                        key=f"loaded_excl_{idx}_{obs_text}"
+                                    )
+                                else:
+                                    excl_list = []
                                 class_except_value = st.select_slider(
                                     "Niveau pour la classe",
                                     options=scale_options,
@@ -1694,31 +1703,37 @@ for domaine, data in domaines.items():
                                                 )
                                             selected_observables.append(f"{class_value} - {obs}")
                                         elif apply_mode == "Élèves particuliers":
-                                            # Saisie de plusieurs élèves séparés par des virgules et une échelle par élève
+                                            # Récupérer la liste des élèves
+                                            students_names = [s.get("name") for s in st.session_state.get("students", []) or []]
                                             names_key = f"eleves_bulk_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
-                                            names_str = st.text_input(
-                                                "Prénoms des élèves (séparés par des virgules)",
-                                                key=names_key
-                                            )
-                                            names_list = [n.strip() for n in (names_str or "").split(",") if n.strip()]
-                                            if names_list:
-                                                st.caption(", ".join(names_list))
-                                            for eleve in names_list:
-                                                safe = eleve.replace(" ", "_")
-                                                eleve_value = st.select_slider(
-                                                    eleve,
-                                                    options=scale_options,
-                                                    key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_{safe}_{occ_idx}",
+                                            if students_names:
+                                                names_list = st.multiselect(
+                                                    "Sélectionnez les élèves",
+                                                    options=students_names,
+                                                    key=names_key
                                                 )
-                                                selected_observables.append(f"{eleve}: {eleve_value} - {obs}")
+                                                for eleve in names_list:
+                                                    safe = eleve.replace(" ", "_")
+                                                    eleve_value = st.select_slider(
+                                                        eleve,
+                                                        options=scale_options,
+                                                        key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_{safe}_{occ_idx}",
+                                                    )
+                                                    selected_observables.append(f"{eleve}: {eleve_value} - {obs}")
+                                            else:
+                                                st.warning("Aucun élève enregistré. Ajoutez des élèves dans la sidebar.")
                                         else:
                                             # Tous les élèves sauf...
+                                            students_names = [s.get("name") for s in st.session_state.get("students", []) or []]
                                             excl_key = f"excl_eleves_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
-                                            excl_str = st.text_input(
-                                                "Prénoms des élèves exclus (séparés par des virgules)",
-                                                key=excl_key
-                                            )
-                                            excl_list = [n.strip() for n in (excl_str or "").split(",") if n.strip()]
+                                            if students_names:
+                                                excl_list = st.multiselect(
+                                                    "Élèves à exclure",
+                                                    options=students_names,
+                                                    key=excl_key
+                                                )
+                                            else:
+                                                excl_list = []
                                             slider_col, _ = st.columns([4, 8])
                                             with slider_col:
                                                 class_except_value = st.select_slider(
