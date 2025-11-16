@@ -4,6 +4,9 @@ from io import BytesIO
 from datetime import datetime
 from pathlib import Path
 import base64
+import sqlite3
+import hashlib
+import os
 
 # --- PDF amélioré avec en-tête/pied-de-page et éléments graphiques ---
 class CustomPDF(FPDF):
@@ -337,6 +340,131 @@ if "show_sidebar" not in st.session_state:
 if "reset_requested" not in st.session_state:
     st.session_state.reset_requested = False
 
+# --- Base de données: enseignants et élèves ---
+DB_PATH = Path(__file__).parent / "app_data.db"
+
+def get_conn():
+    return sqlite3.connect(DB_PATH)
+
+def init_db():
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS teachers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS students (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(teacher_id, name),
+                FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
+            );
+        """)
+        conn.commit()
+
+def _hash_password(password: str, salt_hex: str | None = None) -> tuple[str, str]:
+    if not salt_hex:
+        salt = os.urandom(16)
+        salt_hex = salt.hex()
+    else:
+        salt = bytes.fromhex(salt_hex)
+    h = hashlib.sha256()
+    h.update(salt + password.encode("utf-8"))
+    return h.hexdigest(), salt_hex
+
+def create_teacher(name: str, email: str, password: str) -> tuple[bool, str | None, dict | None]:
+    name = (name or "").strip()
+    email = (email or "").strip().lower()
+    password = (password or "").strip()
+    if not name or not email or not password:
+        return False, "Veuillez renseigner nom, email et mot de passe.", None
+    pwd_hash, salt_hex = _hash_password(password)
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO teachers (name, email, password_hash, salt) VALUES (?, ?, ?, ?)",
+                (name, email, pwd_hash, salt_hex),
+            )
+            teacher_id = cur.lastrowid
+            conn.commit()
+            return True, None, {"id": teacher_id, "name": name, "email": email}
+    except sqlite3.IntegrityError:
+        return False, "Cet email est déjà utilisé.", None
+    except Exception as e:
+        return False, f"Erreur: {e}", None
+
+def authenticate_teacher(email: str, password: str) -> tuple[bool, str | None, dict | None]:
+    email = (email or "").strip().lower()
+    password = (password or "").strip()
+    if not email or not password:
+        return False, "Email et mot de passe requis.", None
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, email, password_hash, salt FROM teachers WHERE email = ?", (email,))
+        row = cur.fetchone()
+        if not row:
+            return False, "Identifiants incorrects.", None
+        teacher_id, name, email_db, pwd_hash_db, salt_hex = row
+        calc_hash, _ = _hash_password(password, salt_hex)
+        if calc_hash != pwd_hash_db:
+            return False, "Identifiants incorrects.", None
+        return True, None, {"id": teacher_id, "name": name, "email": email_db}
+
+def list_students_db(teacher_id: int) -> list[dict]:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM students WHERE teacher_id = ? ORDER BY name COLLATE NOCASE", (teacher_id,))
+        return [{"id": r[0], "name": r[1]} for r in cur.fetchall()]
+
+def add_student_db(teacher_id: int, name: str) -> tuple[bool, str | None]:
+    name = (name or "").strip()
+    if not name:
+        return False, "Nom d'élève requis."
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("INSERT OR IGNORE INTO students (teacher_id, name) VALUES (?, ?)", (teacher_id, name))
+            conn.commit()
+        return True, None
+    except Exception as e:
+        return False, f"Erreur lors de l'ajout: {e}"
+
+def delete_student_db(teacher_id: int, student_id: int) -> tuple[bool, str | None]:
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM students WHERE id = ? AND teacher_id = ?", (student_id, teacher_id))
+            conn.commit()
+        return True, None
+    except Exception as e:
+        return False, f"Suppression impossible: {e}"
+
+# Créer la base au démarrage
+init_db()
+
+# Session: enseignant et liste d'élèves
+if "teacher" not in st.session_state:
+    st.session_state.teacher = None
+if "students" not in st.session_state:
+    st.session_state.students = []
+
+# Rafraîchir la liste d'élèves si connecté
+if st.session_state.teacher:
+    try:
+        st.session_state.students = list_students_db(st.session_state.teacher["id"])
+    except Exception:
+        st.session_state.students = []
+
 # --- Fonction pour réinitialiser tous les checkboxes ---
 def reset_all_checkboxes():
     keys_to_reset = [k for k in st.session_state.keys() if k.startswith(("classe_", "eleve_", "comment_"))]
@@ -448,13 +576,30 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# --- Largeur de la sidebar ---
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] {
+        min-width: 380px !important;
+        max-width: 380px !important;
+    }
+    [data-testid="stSidebar"] > div {
+        min-width: 380px !important;
+        max-width: 380px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- Interface principale ---
-st.set_page_config(page_title="Évaluer et enseigner en 1P-2P", layout="wide")
+st.set_page_config(page_title="Enseigner et Évaluer en 1P-2P", layout="wide")
 
 # Header avec date
 col1, col2 = st.columns([3, 1])
 with col1:
-    st.title("Évaluer et enseigner en 1P-2P")
+    st.title("Enseigner et Évaluer en 1P-2P")
 with col2:
     st.markdown(f"<div style='text-align: right; padding-top: 20px; font-size: 1.1rem; color: #666;'>{datetime.now().strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
 
@@ -679,6 +824,110 @@ for domaine, data in domaines.items():
 
 # --- Sidebar dynamique ---
 with st.sidebar:
+        st.header("👩‍🏫 Bienvenue !")
+        if not st.session_state.teacher:
+            tab_login, tab_signup = st.tabs(["Se connecter", "Créer un compte"])
+            with tab_login:
+                email_login = st.text_input("Email", key="auth_email_login")
+                pwd_login = st.text_input("Mot de passe", type="password", key="auth_pwd_login")
+                if st.button("Se connecter", key="auth_login_btn"):
+                    ok, err, teacher = authenticate_teacher(email_login, pwd_login)
+                    if ok:
+                        st.session_state.teacher = teacher
+                        try:
+                            st.session_state.students = list_students_db(teacher["id"])
+                        except Exception:
+                            st.session_state.students = []
+                        st.success("Connecté.")
+                        try:
+                            st.rerun()
+                        except Exception:
+                            try:
+                                st.experimental_rerun()
+                            except Exception:
+                                pass
+                    else:
+                        st.error(err or "Connexion impossible.")
+            with tab_signup:
+                name_new = st.text_input("Nom et prénom", key="auth_name_new")
+                email_new = st.text_input("Email", key="auth_email_new")
+                pwd_new = st.text_input("Mot de passe", type="password", key="auth_pwd_new")
+                if st.button("Créer mon compte", key="auth_signup_btn"):
+                    ok, err, teacher = create_teacher(name_new, email_new, pwd_new)
+                    if ok:
+                        st.session_state.teacher = teacher
+                        st.session_state.students = []
+                        st.success("Compte créé et connecté.")
+                        try:
+                            st.rerun()
+                        except Exception:
+                            try:
+                                st.experimental_rerun()
+                            except Exception:
+                                pass
+                    else:
+                        st.error(err or "Création impossible.")
+        else:
+            t = st.session_state.teacher
+            st.markdown(f"Connecté en tant que **{t['name']}** ({t['email']})")
+            cols = st.columns([1,1])
+            with cols[0]:
+                if st.button("Se déconnecter", key="auth_logout_btn"):
+                    st.session_state.teacher = None
+                    st.session_state.students = []
+                    try:
+                        st.rerun()
+                    except Exception:
+                        try:
+                            st.experimental_rerun()
+                        except Exception:
+                            pass
+            st.markdown("### Ma classe")
+            # Ajout d'un élève
+            new_student = st.text_input("Ajouter un élève (Prénom Nom)", key="cls_add_one")
+            if st.button("Ajouter", key="cls_add_one_btn"):
+                ok, err = add_student_db(t["id"], new_student)
+                if ok:
+                    st.session_state.students = list_students_db(t["id"])
+                    st.success("Élève ajouté.")
+                else:
+                    st.error(err or "Ajout impossible.")
+            # Ajout en lot
+            with st.expander("Ajouter plusieurs élèves"):
+                multi = st.text_area("Entrez des prénoms (séparés par virgules ou retours à la ligne)", key="cls_add_multi")
+                if st.button("Ajouter ces élèves", key="cls_add_multi_btn"):
+                    names = []
+                    for part in (multi or "").replace(";", ",").split(","):
+                        names.extend([p.strip() for p in part.split("\n")])
+                    names = [n for n in names if n]
+                    if not names:
+                        st.info("Rien à ajouter.")
+                    else:
+                        added = 0
+                        for nm in names:
+                            ok, _ = add_student_db(t["id"], nm)
+                            if ok:
+                                added += 1
+                        st.session_state.students = list_students_db(t["id"])
+                        st.success(f"{added} élève(s) ajouté(s).")
+            # Liste des élèves
+            if st.session_state.students:
+                st.markdown("#### Liste des élèves")
+                for s in st.session_state.students:
+                    c1, c2 = st.columns([4,1])
+                    with c1:
+                        st.write(s["name"])
+                    with c2:
+                        if st.button("🗑️", key=f"del_student_{s['id']}"):
+                            ok, err = delete_student_db(t["id"], s["id"])
+                            if ok:
+                                st.session_state.students = list_students_db(t["id"])
+                                st.success("Supprimé.")
+                            else:
+                                st.error(err or "Suppression impossible.")
+            else:
+                st.info("Aucun élève enregistré pour l'instant.")
+        st.divider()
         st.header("📋 Observations validées")
         if st.session_state.observations:
             for i, obs in enumerate(st.session_state.observations):
