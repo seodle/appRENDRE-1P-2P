@@ -1107,7 +1107,416 @@ if not st.session_state.get("teacher"):
                     st.error(err or "Création impossible.")
     st.stop()
 
-# --- Formulaire d’observation dynamique ---
+# --- Choix du mode principal ---
+if "app_mode" not in st.session_state:
+    st.session_state.app_mode = None
+
+st.markdown("### Que souhaitez-vous faire ?")
+col_plan, col_rep, col_prog = st.columns(3)
+with col_plan:
+    if st.button("📅 Planifier une séance", key="mode_planifier", use_container_width=True):
+        st.session_state.app_mode = "planifier"
+        st.rerun()
+with col_rep:
+    if st.button("📝 Reporter mes observations", key="mode_reporter", use_container_width=True):
+        st.session_state.app_mode = "reporter"
+        st.rerun()
+with col_prog:
+    if st.button("📊 Voir la progression de ma classe", key="mode_progression", use_container_width=True):
+        st.session_state.app_mode = "progression"
+        st.rerun()
+
+mode_app = st.session_state.get("app_mode")
+if mode_app == "planifier":
+    st.info("Mode actuel : **Planifier une séance** – définissez vos activités et sélectionnez les observables, sans saisir les valeurs d'observation (elles seront reportées plus tard).")
+elif mode_app == "reporter":
+    st.info("Mode actuel : **Reporter mes observations** – chargez une séance planifiée et saisissez les valeurs d'observation.")
+elif mode_app == "progression":
+    st.info("Mode actuel : **Voir la progression de ma classe** – synthèse des observations par élève.")
+else:
+    st.info("👆 Choisissez un mode ci-dessus pour commencer.")
+    st.stop()
+
+# --- Vue progression simple (par élève, pour les observations chargées) ---
+if mode_app == "progression":
+    st.markdown("### 📊 Tableau de bord – progression de la classe")
+    
+    # Sélection de période pour l'export
+    col_period, col_export = st.columns([3, 1])
+    with col_period:
+        date_debut = st.date_input("Date de début", value=datetime.now().date() - timedelta(days=30), key="prog_date_debut")
+        date_fin = st.date_input("Date de fin", value=datetime.now().date(), key="prog_date_fin")
+    with col_export:
+        st.markdown("<br>", unsafe_allow_html=True)
+        # Créer le PDF directement quand on clique
+        if st.button("📄 Exporter PDF", key="export_progression_pdf", use_container_width=True):
+            st.session_state.export_progression = True
+    
+    # Charger toutes les observations de l'enseignant dans la période
+    obs_list = []
+    if st.session_state.teacher:
+        ts_list = get_observation_timestamps(st.session_state.teacher["id"])
+        for ts, _cnt in ts_list:
+            try:
+                ts_date = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").date()
+                if date_debut <= ts_date <= date_fin:
+                    loaded = get_observations_by_timestamp(st.session_state.teacher["id"], ts)
+                    obs_list.extend(loaded)
+            except Exception:
+                pass
+    
+    students = [s.get("name") for s in st.session_state.get("students", []) or []]
+    students_set = {s for s in students if s}
+    
+    # Organiser par domaine et élève
+    progression = {}
+    domaines_progression = {}
+    
+    for obs in obs_list:
+        domaine = obs.get("Domaine") or ""
+        composante = obs.get("Composante") or ""
+        apprentissage = obs.get("Apprentissage") or ""
+        key_appr = f"{domaine} – {composante} – {apprentissage}" if apprentissage else "(non renseigné)"
+        
+        # Extraire les observables avec leurs valeurs
+        for item in obs.get("Observables", []) or []:
+            target_names = []
+            txt = item
+            valeur = None
+            
+            # Parser le format "Valeur - Observable" ou "Nom: Valeur - Observable"
+            if " - " in item:
+                parts = item.split(" - ", 1)
+                if len(parts) == 2:
+                    valeur_part = parts[0].strip()
+                    txt = parts[1].strip()
+                    
+                    # Extraire le nom si présent
+                    if ":" in valeur_part:
+                        name_part, val_part = valeur_part.split(":", 1)
+                        name_part = name_part.strip()
+                        valeur_part = val_part.strip()
+                        if name_part.lower() != "classe" and name_part in students_set:
+                            target_names = [name_part]
+                    elif valeur_part.lower().startswith("classe"):
+                        # Cas "Classe (sauf ...): ..."
+                        if "sauf" in valeur_part.lower():
+                            # Extraire les exclus
+                            excl_part = valeur_part.split("sauf", 1)[1].strip().rstrip(":")
+                            excl_list = [e.strip() for e in excl_part.split(",")]
+                            # Tous les élèves sauf ceux exclus
+                            target_names = [s for s in students_set if s not in excl_list]
+                        else:
+                            # Toute la classe
+                            target_names = list(students_set)
+                    
+                    # Identifier la valeur (🌰, 🌱, 🌸)
+                    if "germer" in valeur_part.lower() or "🌰" in valeur_part:
+                        valeur = "🌰 Encore en train de germer"
+                    elif "grandir" in valeur_part.lower() or "🌱" in valeur_part:
+                        valeur = "🌱 En train de grandir"
+                    elif "épanoui" in valeur_part.lower() or "🌸" in valeur_part:
+                        valeur = "🌸 Épanoui(e)"
+            
+            # Si pas de nom spécifique mais "Classe", attribuer à tous
+            if not target_names and "classe" in item.lower():
+                target_names = list(students_set)
+            
+            # Enregistrer pour chaque élève concerné
+            for name in target_names:
+                if name not in progression:
+                    progression[name] = {}
+                    domaines_progression[name] = {}
+                
+                if domaine not in domaines_progression[name]:
+                    domaines_progression[name][domaine] = {}
+                
+                if key_appr not in domaines_progression[name][domaine]:
+                    domaines_progression[name][domaine][key_appr] = []
+                
+                domaines_progression[name][domaine][key_appr].append({
+                    "observable": txt,
+                    "valeur": valeur or "Non évalué",
+                    "date": obs.get("created_at", ""),
+                    "commentaire": obs.get("Commentaire", "")
+                })
+
+    if not progression:
+        st.info("Aucune donnée exploitée pour l'instant. Validez d'abord des observations (avec élèves nommés) pour voir la progression.")
+    else:
+        # Sélection d'élève(s) pour l'affichage
+        eleves_selectionnes = st.multiselect(
+            "Sélectionnez les élèves à afficher (laisser vide pour tous)",
+            options=sorted(students_set),
+            key="prog_eleves_select"
+        )
+        
+        eleves_a_afficher = eleves_selectionnes if eleves_selectionnes else sorted(students_set)
+        
+        for eleve in eleves_a_afficher:
+            if eleve not in progression:
+                continue
+                
+            st.markdown(f"#### 👤 {eleve}")
+            st.markdown("---")
+            
+            for domaine, appr_data in domaines_progression[eleve].items():
+                st.markdown(f"**{domaine}**")
+                for appr_key, observations in appr_data.items():
+                    with st.expander(f"🔹 {appr_key}", expanded=False):
+                        for obs_item in observations:
+                            st.markdown(f"- **{obs_item['observable']}** : {obs_item['valeur']}")
+                            if obs_item.get('commentaire'):
+                                st.caption(f"💬 {obs_item['commentaire']}")
+                            if obs_item.get('date'):
+                                try:
+                                    date_str = format_timestamp_french(obs_item['date'])
+                                    st.caption(f"📅 {date_str}")
+                                except:
+                                    pass
+            st.markdown("---")
+        
+        # Export PDF de progression
+        if st.session_state.get("export_progression"):
+            pdf_buffer = BytesIO()
+            pdf = CustomPDF(teacher_name=st.session_state.teacher.get("name", ""))
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.set_margins(15, 15, 15)
+            pdf.alias_nb_pages()
+            
+            try:
+                pdf.add_font("ArialUnicode", "", "C:\\Windows\\Fonts\\arial.ttf", uni=True)
+                pdf.add_font("ArialUnicode", "B", "C:\\Windows\\Fonts\\arialbd.ttf", uni=True)
+                base_font = "ArialUnicode"
+            except Exception:
+                base_font = "Helvetica"
+            
+            pdf.add_page()
+            content_width = getattr(pdf, "epw", pdf.w - pdf.l_margin - pdf.r_margin)
+            
+            # Titre
+            pdf.set_font(base_font, "B", 18)
+            pdf.cell(0, 10, "Progression de la classe", 0, 1, "C")
+            pdf.ln(5)
+            
+            # Période
+            pdf.set_font(base_font, "", 11)
+            pdf.cell(0, 6, f"Période : du {date_debut.strftime('%d/%m/%Y')} au {date_fin.strftime('%d/%m/%Y')}", 0, 1, "C")
+            pdf.ln(10)
+            
+            # Par élève
+            for eleve in eleves_a_afficher:
+                if eleve not in progression:
+                    continue
+                
+                if pdf.get_y() > pdf.h - 40:
+                    pdf.add_page()
+                
+                pdf.set_font(base_font, "B", 14)
+                pdf.cell(0, 8, f"Élève : {eleve}", 0, 1)
+                pdf.ln(3)
+                
+                for domaine, appr_data in domaines_progression[eleve].items():
+                    if pdf.get_y() > pdf.h - 50:
+                        pdf.add_page()
+                    
+                    pdf.set_font(base_font, "B", 12)
+                    pdf.set_fill_color(230, 230, 230)
+                    pdf.cell(0, 7, domaine, 0, 1, "L", fill=True)
+                    pdf.ln(2)
+                    
+                    for appr_key, observations in appr_data.items():
+                        if pdf.get_y() > pdf.h - 60:
+                            pdf.add_page()
+                        
+                        pdf.set_font(base_font, "B", 10)
+                        pdf.cell(0, 6, appr_key, 0, 1)
+                        pdf.ln(1)
+                        
+                        pdf.set_font(base_font, "", 9)
+                        for obs_item in observations:
+                            y_before = pdf.get_y()
+                            pdf.multi_cell(content_width - 10, 5, f"• {obs_item['observable']} : {obs_item['valeur']}", 0, "L")
+                            if pdf.get_y() - y_before > 20:  # Si trop d'espace, nouvelle page
+                                if pdf.get_y() > pdf.h - 30:
+                                    pdf.add_page()
+                            pdf.ln(1)
+                        
+                        pdf.ln(2)
+                    
+                    pdf.ln(3)
+                
+                pdf.ln(5)
+            
+            pdf_output = bytes(pdf.output(dest='S'))
+            pdf_buffer.write(pdf_output)
+            pdf_buffer.seek(0)
+            
+            date_filename = f"{date_debut.strftime('%Y-%m-%d')}_{date_fin.strftime('%Y-%m-%d')}"
+            st.download_button(
+                label="📥 Télécharger le PDF de progression",
+                data=pdf_buffer,
+                file_name=f"progression_{date_filename}.pdf",
+                mime="application/pdf",
+                key="download_progression_pdf"
+            )
+            # Réinitialiser le flag après génération
+            st.session_state.export_progression = False
+    
+    st.stop()
+
+# --- Formulaire d'observation dynamique ---
+# Mode "Reporter" : charger une séance planifiée
+if mode_app == "reporter":
+    st.markdown("### 📝 Charger une séance planifiée")
+    if st.session_state.teacher:
+        ts_list = get_observation_timestamps(st.session_state.teacher["id"])
+        if ts_list:
+            opts = [f"{format_timestamp_french(ts)} ({cnt} observation(s))" for ts, cnt in ts_list]
+            vals = [ts for ts, _ in ts_list]
+            sel_idx = st.selectbox(
+                "Sélectionnez une séance enregistrée",
+                options=["—"] + opts,
+                key="reporter_load_select"
+            )
+            if sel_idx and sel_idx != "—":
+                idx = opts.index(sel_idx)
+                chosen_ts = vals[idx]
+                if st.button("Charger cette séance", key="reporter_load_btn"):
+                    loaded = get_observations_by_timestamp(st.session_state.teacher["id"], chosen_ts)
+                    if loaded:
+                        st.session_state.observations = loaded
+                        st.session_state.loaded_timestamp = chosen_ts
+                        st.success(f"{len(loaded)} observation(s) chargée(s). Vous pouvez maintenant compléter les valeurs d'observation.")
+                        st.rerun()
+            
+            # Afficher les observations chargées pour modification directe
+            if st.session_state.get("observations") and st.session_state.get("loaded_timestamp"):
+                st.markdown("---")
+                st.markdown("### 📝 Observations chargées - Compléter les valeurs")
+                st.info(f"✅ {len(st.session_state.observations)} observation(s) chargée(s). Complétez les valeurs ci-dessous.")
+                
+                # Afficher chaque observation chargée pour modification directe
+                for idx, obs in enumerate(st.session_state.observations):
+                    domaine_obs = obs.get("Domaine", "")
+                    comp_obs = obs.get("Composante", "")
+                    appr_obs = obs.get("Apprentissage", "")
+                    
+                    with st.expander(f"📋 Observation {idx+1}: {domaine_obs} - {appr_obs}", expanded=True):
+                        st.markdown(f"**Domaine:** {domaine_obs}")
+                        st.markdown(f"**Composante:** {comp_obs}")
+                        st.markdown(f"**Apprentissage:** {appr_obs}")
+                        
+                        if obs.get("Activités"):
+                            st.markdown(f"**Activités:** {', '.join(obs['Activités'])}")
+                        
+                        # Trouver les détails de l'apprentissage pour afficher les observables
+                        observables_list = []
+                        for dom_name, dom_data in domaines.items():
+                            if dom_name == domaine_obs:
+                                for comp_name, criteres in dom_data["composantes"].items():
+                                    if comp_name == comp_obs:
+                                        for crit_name, detail in criteres.items():
+                                            if crit_name == appr_obs:
+                                                observables_list = detail.get("Observables", [])
+                                                break
+                        
+                        st.markdown("---")
+                        st.markdown("**👀 Évaluer les observables**")
+                        
+                        scale_options = [
+                            "🌰 Encore en train de germer",
+                            "🌱 En train de grandir",
+                            "🌸 Épanoui(e)"
+                        ]
+                        
+                        selected_observables = []
+                        
+                        # Afficher chaque observable avec possibilité de saisir la valeur
+                        for obs_text in observables_list:
+                            st.markdown(f"**{obs_text}**")
+                            
+                            # Mode d'application
+                            apply_mode = st.selectbox(
+                                "Appliquer à",
+                                ("Toute la classe", "Élèves particuliers", "Tous les élèves sauf...", "Ne pas évaluer"),
+                                key=f"loaded_apply_{idx}_{obs_text}",
+                                index=3  # Par défaut "Ne pas évaluer"
+                            )
+                            
+                            if apply_mode == "Toute la classe":
+                                class_value = st.select_slider(
+                                    "Niveau",
+                                    options=scale_options,
+                                    key=f"loaded_class_val_{idx}_{obs_text}"
+                                )
+                                selected_observables.append(f"{class_value} - {obs_text}")
+                            
+                            elif apply_mode == "Élèves particuliers":
+                                names_str = st.text_input(
+                                    "Prénoms des élèves (séparés par des virgules)",
+                                    key=f"loaded_eleves_{idx}_{obs_text}"
+                                )
+                                names_list = [n.strip() for n in (names_str or "").split(",") if n.strip()]
+                                if names_list:
+                                    st.caption(", ".join(names_list))
+                                    for eleve in names_list:
+                                        safe = eleve.replace(" ", "_")
+                                        eleve_value = st.select_slider(
+                                            eleve,
+                                            options=scale_options,
+                                            key=f"loaded_eleve_val_{idx}_{obs_text}_{safe}"
+                                        )
+                                        selected_observables.append(f"{eleve}: {eleve_value} - {obs_text}")
+                            
+                            elif apply_mode == "Tous les élèves sauf...":
+                                excl_str = st.text_input(
+                                    "Prénoms des élèves exclus (séparés par des virgules)",
+                                    key=f"loaded_excl_{idx}_{obs_text}"
+                                )
+                                excl_list = [n.strip() for n in (excl_str or "").split(",") if n.strip()]
+                                class_except_value = st.select_slider(
+                                    "Niveau pour la classe",
+                                    options=scale_options,
+                                    key=f"loaded_class_except_val_{idx}_{obs_text}"
+                                )
+                                if excl_list:
+                                    excl_txt = ", ".join(excl_list)
+                                    selected_observables.append(f"Classe (sauf {excl_txt}): {class_except_value} - {obs_text}")
+                                else:
+                                    selected_observables.append(f"{class_except_value} - {obs_text}")
+                        
+                        # Commentaire
+                        st.markdown("---")
+                        commentaire = st.text_area(
+                            "💬 Commentaire",
+                            value=obs.get("Commentaire", ""),
+                            key=f"loaded_comment_{idx}"
+                        )
+                        
+                        # Bouton de mise à jour
+                        if st.button(f"✅ Mettre à jour cette observation", key=f"update_loaded_{idx}"):
+                            if selected_observables:
+                                # Mettre à jour l'observation
+                                obs["Observables"] = selected_observables
+                                obs["Commentaire"] = commentaire
+                                obs["Mode"] = "Selon sélection (classe/élèves)"
+                                st.success("Observation mise à jour !")
+                                st.rerun()
+                            else:
+                                st.warning("Veuillez évaluer au moins un observable.")
+                
+                st.markdown("---")
+                st.markdown("### ➕ Ajouter de nouvelles observations")
+                st.info("Utilisez les menus déroulants ci-dessous pour ajouter d'autres observations.")
+        else:
+            st.info("Aucune séance enregistrée pour l'instant. Créez d'abord une séance planifiée, ou ajoutez directement des observations ci-dessous.")
+
+# Afficher les domaines uniquement si on n'a pas d'observations chargées, ou après les observations chargées
+if mode_app == "reporter":
+    if not (st.session_state.get("observations") and st.session_state.get("loaded_timestamp")):
+        st.markdown("### 📚 Ajouter des observations")
+
 for domaine, data in domaines.items():
     icon = data["icon"]
     with st.expander(f"{icon} **{domaine}**", expanded=False):
@@ -1124,8 +1533,16 @@ for domaine, data in domaines.items():
                             st.markdown(f'<span style="color:red; font-weight:bold; font-size:1rem;">{code_per}</span>', unsafe_allow_html=True)
                     
                     with crit_expander:
-                        # Section déplacée dans l'onglet Enseigner
-
+                        # Vérifier si cette observation existe déjà (mode reporter)
+                        existing_obs = None
+                        if mode_app == "reporter" and st.session_state.get("observations"):
+                            for existing in st.session_state.observations:
+                                if (existing.get("Domaine") == domaine and 
+                                    existing.get("Composante") == comp_name and 
+                                    existing.get("Apprentissage") == crit_name):
+                                    existing_obs = existing
+                                    break
+                        
                         tab_enseigner, tab_evaluer = st.tabs(["🧑‍🏫 Enseigner", "👀 Évaluer"])
 
                         with tab_enseigner:
@@ -1180,11 +1597,19 @@ for domaine, data in domaines.items():
                             proc_opts = detail["processus_cognitifs"]
                             comp_key_mob = f"comp_mobil_{domaine}_{comp_name}_{crit_name}"
                             proc_key_mob = f"proc_mobil_{domaine}_{comp_name}_{crit_name}"
+                            
+                            # Pré-remplir si observation existe
+                            if existing_obs:
+                                if comp_key_mob not in st.session_state:
+                                    st.session_state[comp_key_mob] = existing_obs.get("Compétences_mobilisées", [])
+                                if proc_key_mob not in st.session_state:
+                                    st.session_state[proc_key_mob] = existing_obs.get("Processus_mobilisés", [])
 
                             st.markdown("#### 🌟 Compétences transversales à mobiliser")
                             st.multiselect(
                                 "Sélectionnez les compétences transversales",
                                 comp_opts,
+                                default=st.session_state.get(comp_key_mob, []),
                                 key=comp_key_mob,
                             )
 
@@ -1192,97 +1617,129 @@ for domaine, data in domaines.items():
                             st.multiselect(
                                 "Sélectionnez les processus cognitifs",
                                 proc_opts,
+                                default=st.session_state.get(proc_key_mob, []),
                                 key=proc_key_mob,
                             )
 
                         with tab_evaluer:
                             st.subheader("Observables")
                             observables = detail["Observables"]
+                            
+                            if mode_app == "planifier":
+                                # Mode planifier : juste sélectionner les observables
+                                st.info("💡 En mode planification, sélectionnez les observables que vous souhaitez évaluer. Les valeurs seront ajoutées plus tard en mode « Reporter mes observations ».")
+                                selected_observables = []
+                                for obs in observables:
+                                    obs_key = f"obs_select_{domaine}_{comp_name}_{crit_name}_{obs}"
+                                    if st.checkbox(obs, key=obs_key):
+                                        selected_observables.append(obs)
+                            else:
+                                # Mode reporter : ajouter les valeurs d'observation
+                                scale_options = [
+                                    "🌰 Encore en train de germer",
+                                    "🌱 En train de grandir",
+                                    "🌸 Épanoui(e)"
+                                ]
+                                selected_observables = []
+                                
+                                # Si observation existante, pré-remplir
+                                if existing_obs:
+                                    st.info("📝 Observation existante chargée. Vous pouvez modifier les valeurs ci-dessous.")
+                                    existing_obs_list = existing_obs.get("Observables", [])
+                                    # Parser les observables existants pour pré-remplir
+                                    for existing_item in existing_obs_list:
+                                        if " - " in existing_item:
+                                            parts = existing_item.split(" - ", 1)
+                                            if len(parts) == 2:
+                                                valeur_part = parts[0].strip()
+                                                obs_text = parts[1].strip()
+                                                # Trouver l'observable correspondant
+                                                for obs in observables:
+                                                    if obs in obs_text or obs_text in obs:
+                                                        selected_observables.append(existing_item)
+                                                        break
+                                
+                                for obs in observables:
+                                    # En-tête + boutons d'ajout/suppression d'occurrence
+                                    head_col, add_col, rem_col = st.columns([10, 1, 1])
+                                    with head_col:
+                                        st.markdown(f"**{obs}**")
+                                    # Compteur d'occurrences dans l'état
+                                    count_key = f"occ_count_{domaine}_{comp_name}_{crit_name}_{obs}"
+                                    if count_key not in st.session_state:
+                                        st.session_state[count_key] = 1
+                                    with add_col:
+                                        if st.button("➕", key=f"add_occ_{domaine}_{comp_name}_{crit_name}_{obs}"):
+                                            st.session_state[count_key] = min(st.session_state[count_key] + 1, 10)
+                                    with rem_col:
+                                        if st.button("➖", key=f"rem_occ_{domaine}_{comp_name}_{crit_name}_{obs}"):
+                                            st.session_state[count_key] = max(1, st.session_state[count_key] - 1)
 
-                            # Affichage des curseurs d'évaluation (🌰 / 🌱 / 🌸) avec "Appliquer à"
-                            scale_options = [
-                                "🌰 Encore en train de germer",
-                                "🌱 En train de grandir",
-                                "🌸 Épanoui(e)"
-                            ]
-                            selected_observables = []
-                            for obs in observables:
-                                # En-tête + boutons d'ajout/suppression d'occurrence
-                                head_col, add_col, rem_col = st.columns([10, 1, 1])
-                                with head_col:
-                                    st.markdown(f"**{obs}**")
-                                # Compteur d'occurrences dans l'état
-                                count_key = f"occ_count_{domaine}_{comp_name}_{crit_name}_{obs}"
-                                if count_key not in st.session_state:
-                                    st.session_state[count_key] = 1
-                                with add_col:
-                                    if st.button("➕", key=f"add_occ_{domaine}_{comp_name}_{crit_name}_{obs}"):
-                                        st.session_state[count_key] = min(st.session_state[count_key] + 1, 10)
-                                with rem_col:
-                                    if st.button("➖", key=f"rem_occ_{domaine}_{comp_name}_{crit_name}_{obs}"):
-                                        st.session_state[count_key] = max(1, st.session_state[count_key] - 1)
-
-                                # Rendu des occurrences
-                                for occ_idx in range(st.session_state[count_key]):
-                                    st.caption(f"Occurrence {occ_idx + 1}")
-                                    apply_mode = st.selectbox(
-                                        "Appliquer à",
-                                        ("Toute la classe", "Élèves particuliers", "Tous les élèves sauf..."),
-                                        key=f"apply_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
-                                    )
-                                    if apply_mode == "Toute la classe":
-                                        slider_col, _ = st.columns([4, 8])
-                                        with slider_col:
-                                            class_value = st.select_slider(
-                                                "",
-                                                options=scale_options,
-                                                key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_{occ_idx}",
-                                                label_visibility="collapsed"
-                                            )
-                                        selected_observables.append(f"{class_value} - {obs}")
-                                    elif apply_mode == "Élèves particuliers":
-                                        # Saisie de plusieurs élèves séparés par des virgules et une échelle par élève
-                                        names_key = f"eleves_bulk_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
-                                        names_str = st.text_input(
-                                            "Prénoms des élèves (séparés par des virgules)",
-                                            key=names_key
+                                    # Rendu des occurrences
+                                    for occ_idx in range(st.session_state[count_key]):
+                                        st.caption(f"Occurrence {occ_idx + 1}")
+                                        apply_mode = st.selectbox(
+                                            "Appliquer à",
+                                            ("Toute la classe", "Élèves particuliers", "Tous les élèves sauf..."),
+                                            key=f"apply_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
                                         )
-                                        names_list = [n.strip() for n in (names_str or "").split(",") if n.strip()]
-                                        if names_list:
-                                            st.caption(", ".join(names_list))
-                                        for eleve in names_list:
-                                            safe = eleve.replace(" ", "_")
-                                            eleve_value = st.select_slider(
-                                                eleve,
-                                                options=scale_options,
-                                                key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_{safe}_{occ_idx}",
+                                        if apply_mode == "Toute la classe":
+                                            slider_col, _ = st.columns([4, 8])
+                                            with slider_col:
+                                                class_value = st.select_slider(
+                                                    "",
+                                                    options=scale_options,
+                                                    key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_{occ_idx}",
+                                                    label_visibility="collapsed"
+                                                )
+                                            selected_observables.append(f"{class_value} - {obs}")
+                                        elif apply_mode == "Élèves particuliers":
+                                            # Saisie de plusieurs élèves séparés par des virgules et une échelle par élève
+                                            names_key = f"eleves_bulk_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
+                                            names_str = st.text_input(
+                                                "Prénoms des élèves (séparés par des virgules)",
+                                                key=names_key
                                             )
-                                            selected_observables.append(f"{eleve}: {eleve_value} - {obs}")
-                                    else:
-                                        # Tous les élèves sauf...
-                                        excl_key = f"excl_eleves_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
-                                        excl_str = st.text_input(
-                                            "Prénoms des élèves exclus (séparés par des virgules)",
-                                            key=excl_key
-                                        )
-                                        excl_list = [n.strip() for n in (excl_str or "").split(",") if n.strip()]
-                                        slider_col, _ = st.columns([4, 8])
-                                        with slider_col:
-                                            class_except_value = st.select_slider(
-                                                "",
-                                                options=scale_options,
-                                                key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_except_{occ_idx}",
-                                                label_visibility="collapsed"
-                                            )
-                                        if excl_list:
-                                            excl_txt = ", ".join(excl_list)
-                                            selected_observables.append(f"Classe (sauf {excl_txt}): {class_except_value} - {obs}")
+                                            names_list = [n.strip() for n in (names_str or "").split(",") if n.strip()]
+                                            if names_list:
+                                                st.caption(", ".join(names_list))
+                                            for eleve in names_list:
+                                                safe = eleve.replace(" ", "_")
+                                                eleve_value = st.select_slider(
+                                                    eleve,
+                                                    options=scale_options,
+                                                    key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_{safe}_{occ_idx}",
+                                                )
+                                                selected_observables.append(f"{eleve}: {eleve_value} - {obs}")
                                         else:
-                                            selected_observables.append(f"{class_except_value} - {obs}")
+                                            # Tous les élèves sauf...
+                                            excl_key = f"excl_eleves_{domaine}_{comp_name}_{crit_name}_{obs}_{occ_idx}"
+                                            excl_str = st.text_input(
+                                                "Prénoms des élèves exclus (séparés par des virgules)",
+                                                key=excl_key
+                                            )
+                                            excl_list = [n.strip() for n in (excl_str or "").split(",") if n.strip()]
+                                            slider_col, _ = st.columns([4, 8])
+                                            with slider_col:
+                                                class_except_value = st.select_slider(
+                                                    "",
+                                                    options=scale_options,
+                                                    key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_except_{occ_idx}",
+                                                    label_visibility="collapsed"
+                                                )
+                                            if excl_list:
+                                                excl_txt = ", ".join(excl_list)
+                                                selected_observables.append(f"Classe (sauf {excl_txt}): {class_except_value} - {obs}")
+                                            else:
+                                                selected_observables.append(f"{class_except_value} - {obs}")
 
                             # Commentaire (placé avant la section Mise en avant)
                             comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
-                            commentaire = st.text_input("Commentaire (facultatif)", key=comment_key)
+                            # Pré-remplir le commentaire si observation existe
+                            default_comment = ""
+                            if existing_obs:
+                                default_comment = existing_obs.get("Commentaire", "")
+                            commentaire = st.text_input("Commentaire (facultatif)", value=default_comment, key=comment_key)
 
                             # Mise en avant: compétences transversales et processus cognitifs
                             st.markdown("---")
@@ -1291,40 +1748,104 @@ for domaine, data in domaines.items():
                             proc_options = ["—"] + detail["processus_cognitifs"]
                             comp_key = f"comp_select_{domaine}_{comp_name}_{crit_name}"
                             proc_key = f"proc_select_{domaine}_{comp_name}_{crit_name}"
-                            comp_selected = st.selectbox("Compétence transversale", comp_options, key=comp_key)
-                            proc_selected = st.selectbox("Processus cognitif", proc_options, key=proc_key)
+                            
+                            # Pré-remplir si observation existe
+                            default_comp = "—"
+                            default_proc = "—"
+                            if existing_obs:
+                                comp_av = existing_obs.get("Compétence_mise_en_avant", "")
+                                proc_av = existing_obs.get("Processus_mis_en_avant", "")
+                                if comp_av and comp_av in comp_options:
+                                    default_comp = comp_av
+                                if proc_av and proc_av in proc_options:
+                                    default_proc = proc_av
+                            
+                            comp_selected = st.selectbox("Compétence transversale", comp_options, index=comp_options.index(default_comp) if default_comp in comp_options else 0, key=comp_key)
+                            proc_selected = st.selectbox("Processus cognitif", proc_options, index=proc_options.index(default_proc) if default_proc in proc_options else 0, key=proc_key)
 
                             # Bouton de validation
                             if st.button("✅ Valider cette observation", key=f"valider_{domaine}_{comp_name}_{crit_name}"):
-                                if selected_observables:
-                                    # Récupérer activités cochées ou saisies
-                                    selected_activities = []
-                                    for c in contextes_disponibles:
-                                        acts = detail["Activités par contexte"][c]
-                                        for idx, act in enumerate(acts):
-                                            if st.session_state.get(f"act_{domaine}_{comp_name}_{crit_name}_{c}_{idx}"):
-                                                selected_activities.append(act)
-                                        autre_val = st.session_state.get(f"autre_act_{domaine}_{comp_name}_{crit_name}_{c}", "").strip()
-                                        if autre_val:
-                                            selected_activities.append(autre_val)
-                                    # Récupérer compétences/processus mobilisés (onglet Enseigner)
-                                    comp_mobilisees = st.session_state.get(comp_key_mob, [])
-                                    processus_mobilises = st.session_state.get(proc_key_mob, [])
-                                    obs_entry = {
-                                        "Domaine": domaine,
-                                        "Composante": comp_name,
-                                        "Apprentissage": crit_name,
-                                        "Mode": "Selon sélection (classe/élèves)",
-                                        "Observables": selected_observables.copy(),
-                                        "Commentaire": commentaire or "",
-                                        "Activités": selected_activities,
-                                        "Compétences_mobilisées": comp_mobilisees,
-                                        "Processus_mobilisés": processus_mobilises,
-                                        "Compétence_mise_en_avant": (comp_selected if comp_selected != "—" else ""),
-                                        "Processus_mis_en_avant": (proc_selected if proc_selected != "—" else "")
-                                    }
-                                    st.session_state.observations.append(obs_entry)
-                                    st.success("Observation ajoutée (non enregistrée en base).")
+                                # Récupérer activités cochées ou saisies
+                                selected_activities = []
+                                for c in contextes_disponibles:
+                                    acts = detail["Activités par contexte"][c]
+                                    for idx, act in enumerate(acts):
+                                        if st.session_state.get(f"act_{domaine}_{comp_name}_{crit_name}_{c}_{idx}"):
+                                            selected_activities.append(act)
+                                    autre_val = st.session_state.get(f"autre_act_{domaine}_{comp_name}_{crit_name}_{c}", "").strip()
+                                    if autre_val:
+                                        selected_activities.append(autre_val)
+                                # Récupérer compétences/processus mobilisés (onglet Enseigner)
+                                comp_mobilisees = st.session_state.get(comp_key_mob, [])
+                                processus_mobilises = st.session_state.get(proc_key_mob, [])
+                                
+                                if mode_app == "planifier":
+                                    # Mode planifier : juste les observables sélectionnés, pas de valeurs
+                                    if selected_observables:
+                                        obs_entry = {
+                                            "Domaine": domaine,
+                                            "Composante": comp_name,
+                                            "Apprentissage": crit_name,
+                                            "Mode": "Séance planifiée",
+                                            "Observables": selected_observables.copy(),  # Juste les noms des observables
+                                            "Commentaire": commentaire or "",
+                                            "Activités": selected_activities,
+                                            "Compétences_mobilisées": comp_mobilisees,
+                                            "Processus_mobilisés": processus_mobilises,
+                                            "Compétence_mise_en_avant": (comp_selected if comp_selected != "—" else ""),
+                                            "Processus_mis_en_avant": (proc_selected if proc_selected != "—" else "")
+                                        }
+                                        # Vérifier si observation existe déjà
+                                        found_idx = None
+                                        for i, obs in enumerate(st.session_state.observations):
+                                            if (obs.get("Domaine") == domaine and 
+                                                obs.get("Composante") == comp_name and 
+                                                obs.get("Apprentissage") == crit_name):
+                                                found_idx = i
+                                                break
+                                        if found_idx is not None:
+                                            st.session_state.observations[found_idx] = obs_entry
+                                            st.success("Observation planifiée mise à jour.")
+                                        else:
+                                            st.session_state.observations.append(obs_entry)
+                                            st.success("Observation planifiée ajoutée.")
+                                    else:
+                                        st.warning("Veuillez sélectionner au moins un observable.")
+                                else:
+                                    # Mode reporter : nécessite des valeurs d'observation
+                                    if selected_observables:
+                                        obs_entry = {
+                                            "Domaine": domaine,
+                                            "Composante": comp_name,
+                                            "Apprentissage": crit_name,
+                                            "Mode": "Selon sélection (classe/élèves)",
+                                            "Observables": selected_observables.copy(),
+                                            "Commentaire": commentaire or "",
+                                            "Activités": selected_activities,
+                                            "Compétences_mobilisées": comp_mobilisees,
+                                            "Processus_mobilisés": processus_mobilises,
+                                            "Compétence_mise_en_avant": (comp_selected if comp_selected != "—" else ""),
+                                            "Processus_mis_en_avant": (proc_selected if proc_selected != "—" else "")
+                                        }
+                                        # Si observation existe déjà (chargée), la mettre à jour
+                                        if existing_obs and existing_obs.get("db_id"):
+                                            obs_entry["db_id"] = existing_obs["db_id"]
+                                            found_idx = None
+                                            for i, obs in enumerate(st.session_state.observations):
+                                                if obs.get("db_id") == existing_obs["db_id"]:
+                                                    found_idx = i
+                                                    break
+                                            if found_idx is not None:
+                                                st.session_state.observations[found_idx] = obs_entry
+                                                st.success("Observation mise à jour.")
+                                            else:
+                                                st.session_state.observations.append(obs_entry)
+                                                st.success("Observation ajoutée.")
+                                        else:
+                                            st.session_state.observations.append(obs_entry)
+                                            st.success("Observation ajoutée.")
+                                    else:
+                                        st.warning("Veuillez saisir au moins une valeur d'observation.")
 
 # --- Sidebar dynamique ---
 with st.sidebar:
