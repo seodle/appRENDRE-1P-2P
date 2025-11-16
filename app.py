@@ -570,6 +570,50 @@ def save_observation_db(obs: dict, teacher_id: int) -> tuple[bool, str | None, i
     except Exception as e:
         return False, f"Erreur enregistrement observation: {e}", None
 
+def update_observation_db(obs_id: int, obs: dict, teacher_id: int) -> tuple[bool, str | None]:
+    """Met à jour une observation existante en base de données"""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE observations SET
+                    domaine = ?,
+                    composante = ?,
+                    apprentissage = ?,
+                    mode = ?,
+                    observables_json = ?,
+                    commentaire = ?,
+                    activites_json = ?,
+                    competences_mobilisees_json = ?,
+                    processus_mobilises_json = ?,
+                    competence_mise_en_avant = ?,
+                    processus_mis_en_avant = ?
+                WHERE id = ? AND teacher_id = ?
+                """,
+                (
+                    obs.get("Domaine"),
+                    obs.get("Composante"),
+                    obs.get("Apprentissage"),
+                    obs.get("Mode"),
+                    json.dumps(obs.get("Observables") or [], ensure_ascii=False),
+                    obs.get("Commentaire") or "",
+                    json.dumps(obs.get("Activités") or [], ensure_ascii=False),
+                    json.dumps(obs.get("Compétences_mobilisées") or [], ensure_ascii=False),
+                    json.dumps(obs.get("Processus_mobilisés") or [], ensure_ascii=False),
+                    obs.get("Compétence_mise_en_avant") or "",
+                    obs.get("Processus_mis_en_avant") or "",
+                    obs_id,
+                    teacher_id,
+                ),
+            )
+            if cur.rowcount == 0:
+                return False, "Aucune observation correspondante à mettre à jour."
+            conn.commit()
+            return True, None
+    except Exception as e:
+        return False, f"Erreur mise à jour observation: {e}"
+
 def save_observations_bulk(observations: list[dict], teacher_id: int) -> tuple[bool, str | None, list[int] | None, str | None]:
     # Enregistre en lot avec le même horodatage pour regroupement
     try:
@@ -637,7 +681,7 @@ def get_observations_by_timestamp(teacher_id: int, created_at: str) -> list[dict
                 SELECT id, domaine, composante, apprentissage, mode,
                        observables_json, commentaire, activites_json,
                        competences_mobilisees_json, processus_mobilises_json,
-                       competence_mise_en_avant, processus_mis_en_avant
+                       competence_mise_en_avant, processus_mis_en_avant, created_at
                 FROM observations
                 WHERE teacher_id = ? AND created_at = ?
                 ORDER BY id ASC
@@ -648,7 +692,7 @@ def get_observations_by_timestamp(teacher_id: int, created_at: str) -> list[dict
         obs_list: list[dict] = []
         for r in rows:
             (oid, domaine, composante, apprentissage, mode, obs_json, com, act_json,
-             comp_json, proc_json, comp_av, proc_av) = r
+             comp_json, proc_json, comp_av, proc_av, created_at_val) = r
             try:
                 observables = json.loads(obs_json) if obs_json else []
             except Exception:
@@ -678,6 +722,7 @@ def get_observations_by_timestamp(teacher_id: int, created_at: str) -> list[dict
                 "Processus_mobilisés": proc_mob,
                 "Compétence_mise_en_avant": comp_av or "",
                 "Processus_mis_en_avant": proc_av or "",
+                "created_at": created_at_val or "",
             })
         return obs_list
     except Exception:
@@ -1168,6 +1213,16 @@ if mode_app == "progression":
     students = [s.get("name") for s in st.session_state.get("students", []) or []]
     students_set = {s for s in students if s}
     
+    # Debug : afficher les infos
+    with st.expander("🔍 Informations de debug (cliquez pour voir)", expanded=False):
+        st.write(f"**Nombre d'observations chargées :** {len(obs_list)}")
+        st.write(f"**Nombre d'élèves :** {len(students_set)}")
+        st.write(f"**Élèves :** {', '.join(students_set) if students_set else 'Aucun'}")
+        if obs_list:
+            st.write(f"**Période sélectionnée :** {date_debut} → {date_fin}")
+            st.write("**Premier exemple d'observation :**")
+            st.json(obs_list[0])
+    
     # Organiser par domaine et élève
     progression = {}
     domaines_progression = {}
@@ -1196,7 +1251,11 @@ if mode_app == "progression":
                         name_part, val_part = valeur_part.split(":", 1)
                         name_part = name_part.strip()
                         valeur_part = val_part.strip()
-                        if name_part.lower() != "classe" and name_part in students_set:
+                        if name_part.lower() == "classe":
+                            # Cas "Classe: valeur - observable"
+                            target_names = list(students_set)
+                        elif name_part in students_set:
+                            # Cas "Nom d'élève: valeur - observable"
                             target_names = [name_part]
                     elif valeur_part.lower().startswith("classe"):
                         # Cas "Classe (sauf ...): ..."
@@ -1240,9 +1299,21 @@ if mode_app == "progression":
                     "date": obs.get("created_at", ""),
                     "commentaire": obs.get("Commentaire", "")
                 })
+    
+    # Debug : afficher le résultat du parsing
+    with st.expander("🔍 Résultat du parsing (debug)", expanded=False):
+        st.write(f"**Nombre d'élèves avec des données :** {len(progression)}")
+        if progression:
+            st.write(f"**Élèves détectés :** {', '.join(progression.keys())}")
+            for eleve, data in list(progression.items())[:1]:  # Afficher juste un exemple
+                st.write(f"**Exemple pour {eleve} :**")
+                st.json(domaines_progression[eleve])
 
     if not progression:
-        st.info("Aucune donnée exploitée pour l'instant. Validez d'abord des observations (avec élèves nommés) pour voir la progression.")
+        st.info("📊 Aucune donnée à afficher pour l'instant. Pour voir la progression :\n\n"
+                "1️⃣ Validez des observations (✅ Valider cette observation)\n\n"
+                "2️⃣ Enregistrez-les en base de données (💾 Enregistrer les observations dans la sidebar)\n\n"
+                "3️⃣ Les données apparaîtront ici automatiquement")
     else:
         # Sélection d'élève(s) pour l'affichage
         eleves_selectionnes = st.multiselect(
@@ -1450,7 +1521,7 @@ if mode_app == "reporter":
                                     options=scale_options,
                                     key=f"loaded_class_val_{idx}_{obs_text}"
                                 )
-                                selected_observables.append(f"{class_value} - {obs_text}")
+                                selected_observables.append(f"Classe: {class_value} - {obs_text}")
                             
                             elif apply_mode == "Élèves particuliers":
                                 # Récupérer la liste des élèves
@@ -1493,7 +1564,7 @@ if mode_app == "reporter":
                                     excl_txt = ", ".join(excl_list)
                                     selected_observables.append(f"Classe (sauf {excl_txt}): {class_except_value} - {obs_text}")
                                 else:
-                                    selected_observables.append(f"{class_except_value} - {obs_text}")
+                                    selected_observables.append(f"Classe: {class_except_value} - {obs_text}")
                         
                         # Commentaire
                         st.markdown("---")
@@ -1506,11 +1577,24 @@ if mode_app == "reporter":
                         # Bouton de mise à jour
                         if st.button(f"✅ Mettre à jour cette observation", key=f"update_loaded_{idx}"):
                             if selected_observables:
-                                # Mettre à jour l'observation
+                                # Mettre à jour l'observation en mémoire
                                 obs["Observables"] = selected_observables
                                 obs["Commentaire"] = commentaire
                                 obs["Mode"] = "Selon sélection (classe/élèves)"
-                                st.success("Observation mise à jour !")
+                                
+                                # Sauvegarder en base de données si l'observation a un db_id
+                                if obs.get("db_id") and st.session_state.teacher:
+                                    success, error = update_observation_db(
+                                        obs["db_id"],
+                                        obs,
+                                        st.session_state.teacher["id"]
+                                    )
+                                    if success:
+                                        st.success("✅ Observation mise à jour et enregistrée en base de données !")
+                                    else:
+                                        st.error(f"❌ Erreur lors de l'enregistrement : {error}")
+                                else:
+                                    st.success("Observation mise à jour en mémoire !")
                                 st.rerun()
                             else:
                                 st.warning("Veuillez évaluer au moins un observable.")
@@ -1701,7 +1785,7 @@ for domaine, data in domaines.items():
                                                     key=f"{domaine}_{comp_name}_{crit_name}_{obs}_rating_class_{occ_idx}",
                                                     label_visibility="collapsed"
                                                 )
-                                            selected_observables.append(f"{class_value} - {obs}")
+                                            selected_observables.append(f"Classe: {class_value} - {obs}")
                                         elif apply_mode == "Élèves particuliers":
                                             # Récupérer la liste des élèves
                                             students_names = [s.get("name") for s in st.session_state.get("students", []) or []]
@@ -1746,7 +1830,7 @@ for domaine, data in domaines.items():
                                                 excl_txt = ", ".join(excl_list)
                                                 selected_observables.append(f"Classe (sauf {excl_txt}): {class_except_value} - {obs}")
                                             else:
-                                                selected_observables.append(f"{class_except_value} - {obs}")
+                                                selected_observables.append(f"Classe: {class_except_value} - {obs}")
 
                             # Commentaire (placé avant la section Mise en avant)
                             comment_key = f"comment_{domaine}_{comp_name}_{crit_name}"
@@ -1852,7 +1936,19 @@ for domaine, data in domaines.items():
                                                     break
                                             if found_idx is not None:
                                                 st.session_state.observations[found_idx] = obs_entry
-                                                st.success("Observation mise à jour.")
+                                                # Mettre à jour en base de données
+                                                if st.session_state.teacher:
+                                                    success, error = update_observation_db(
+                                                        obs_entry["db_id"],
+                                                        obs_entry,
+                                                        st.session_state.teacher["id"]
+                                                    )
+                                                    if success:
+                                                        st.success("✅ Observation mise à jour et enregistrée !")
+                                                    else:
+                                                        st.error(f"❌ Erreur : {error}")
+                                                else:
+                                                    st.success("Observation mise à jour.")
                                             else:
                                                 st.session_state.observations.append(obs_entry)
                                                 st.success("Observation ajoutée.")
@@ -2035,6 +2131,7 @@ with st.sidebar:
         if st.session_state.teacher and st.session_state.observations:
             unsaved_idx = [i for i, o in enumerate(st.session_state.observations) if not o.get("db_id")]
             if unsaved_idx:
+                st.warning(f"⚠️ {len(unsaved_idx)} observation(s) non enregistrée(s) ! Cliquez ci-dessous pour les sauvegarder.")
                 if st.button("💾 Enregistrer les observations", key="obs_save_all_btn"):
                     to_save = [st.session_state.observations[i] for i in unsaved_idx]
                     ok_bulk, err_bulk, ids_bulk, saved_at = save_observations_bulk(to_save, st.session_state.teacher["id"])
