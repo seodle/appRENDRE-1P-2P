@@ -991,77 +991,79 @@ with col2:
 
 # --- Garde: accès uniquement si connecté ---
 if not st.session_state.get("teacher"):
-    st.markdown("### Connexion requise")
-    st.info("Veuillez vous connecter ou créer un compte pour accéder à l'application.")
-    tab_login_main, tab_signup_main = st.tabs(["Se connecter", "Créer un compte"])
-    with tab_login_main:
-        email_login_m = st.text_input("Email", key="auth_email_login_main")
-        pwd_login_m = st.text_input("Mot de passe", type="password", key="auth_pwd_login_main")
-        if st.button("Se connecter", key="auth_login_btn_main"):
-            ok, err, teacher = authenticate_teacher(email_login_m, pwd_login_m)
-            if ok:
-                st.session_state.teacher = teacher
-                try:
-                    st.session_state.students = list_students_db(teacher["id"])
-                except Exception:
+    col_l, col_c, col_r = st.columns([3, 3, 3])
+    with col_c:
+        st.markdown("### Connexion requise")
+        st.info("Veuillez vous connecter ou créer un compte pour accéder à l'application.")
+        tab_login_main, tab_signup_main = st.tabs(["Se connecter", "Créer un compte"])
+        with tab_login_main:
+            email_login_m = st.text_input("Email", key="auth_email_login_main")
+            pwd_login_m = st.text_input("Mot de passe", type="password", key="auth_pwd_login_main")
+            if st.button("Se connecter", key="auth_login_btn_main"):
+                ok, err, teacher = authenticate_teacher(email_login_m, pwd_login_m)
+                if ok:
+                    st.session_state.teacher = teacher
+                    try:
+                        st.session_state.students = list_students_db(teacher["id"])
+                    except Exception:
+                        st.session_state.students = []
+                    # Créer session persistante et ajouter dans l'URL
+                    ok_sess, _err_sess, token = create_session_db(teacher["id"])
+                    if ok_sess and token:
+                        st.session_state.auth_token = token
+                        try:
+                            qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+                        except Exception:
+                            qp = {}
+                        qp = {k: v for k, v in qp.items() if k not in ["del_obs", "del_idx", "del_student"]}
+                        qp["auth"] = token
+                        try:
+                            st.experimental_set_query_params(**qp)
+                        except Exception:
+                            pass
+                    st.success("Connecté.")
+                    try:
+                        st.rerun()
+                    except Exception:
+                        try:
+                            st.experimental_rerun()
+                        except Exception:
+                            pass
+                else:
+                    st.error(err or "Connexion impossible.")
+        with tab_signup_main:
+            name_new_m = st.text_input("Nom et prénom", key="auth_name_new_main")
+            email_new_m = st.text_input("Email", key="auth_email_new_main")
+            pwd_new_m = st.text_input("Mot de passe", type="password", key="auth_pwd_new_main")
+            if st.button("Créer mon compte", key="auth_signup_btn_main"):
+                ok, err, teacher = create_teacher(name_new_m, email_new_m, pwd_new_m)
+                if ok:
+                    st.session_state.teacher = teacher
                     st.session_state.students = []
-                # Créer session persistante et ajouter dans l'URL
-                ok_sess, _err_sess, token = create_session_db(teacher["id"])
-                if ok_sess and token:
-                    st.session_state.auth_token = token
+                    # Créer session persistante et ajouter dans l'URL
+                    ok_sess, _err_sess, token = create_session_db(teacher["id"])
+                    if ok_sess and token:
+                        st.session_state.auth_token = token
+                        try:
+                            qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+                        except Exception:
+                            qp = {}
+                        qp = {k: v for k, v in qp.items() if k not in ["del_obs", "del_idx", "del_student"]}
+                        qp["auth"] = token
+                        try:
+                            st.experimental_set_query_params(**qp)
+                        except Exception:
+                            pass
+                    st.success("Compte créé et connecté.")
                     try:
-                        qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+                        st.rerun()
                     except Exception:
-                        qp = {}
-                    qp = {k: v for k, v in qp.items() if k not in ["del_obs", "del_idx", "del_student"]}
-                    qp["auth"] = token
-                    try:
-                        st.experimental_set_query_params(**qp)
-                    except Exception:
-                        pass
-                st.success("Connecté.")
-                try:
-                    st.rerun()
-                except Exception:
-                    try:
-                        st.experimental_rerun()
-                    except Exception:
-                        pass
-            else:
-                st.error(err or "Connexion impossible.")
-    with tab_signup_main:
-        name_new_m = st.text_input("Nom et prénom", key="auth_name_new_main")
-        email_new_m = st.text_input("Email", key="auth_email_new_main")
-        pwd_new_m = st.text_input("Mot de passe", type="password", key="auth_pwd_new_main")
-        if st.button("Créer mon compte", key="auth_signup_btn_main"):
-            ok, err, teacher = create_teacher(name_new_m, email_new_m, pwd_new_m)
-            if ok:
-                st.session_state.teacher = teacher
-                st.session_state.students = []
-                # Créer session persistante et ajouter dans l'URL
-                ok_sess, _err_sess, token = create_session_db(teacher["id"])
-                if ok_sess and token:
-                    st.session_state.auth_token = token
-                    try:
-                        qp = dict(st.query_params) if hasattr(st, "query_params") else {}
-                    except Exception:
-                        qp = {}
-                    qp = {k: v for k, v in qp.items() if k not in ["del_obs", "del_idx", "del_student"]}
-                    qp["auth"] = token
-                    try:
-                        st.experimental_set_query_params(**qp)
-                    except Exception:
-                        pass
-                st.success("Compte créé et connecté.")
-                try:
-                    st.rerun()
-                except Exception:
-                    try:
-                        st.experimental_rerun()
-                    except Exception:
-                        pass
-            else:
-                st.error(err or "Création impossible.")
+                        try:
+                            st.experimental_rerun()
+                        except Exception:
+                            pass
+                else:
+                    st.error(err or "Création impossible.")
     st.stop()
 
 # --- Formulaire d’observation dynamique ---
