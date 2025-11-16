@@ -469,6 +469,27 @@ def delete_student_db(teacher_id: int, student_id: int) -> tuple[bool, str | Non
     except Exception as e:
         return False, f"Suppression impossible: {e}"
 
+def delete_observation_db(obs_id: int, teacher_id: int | None) -> tuple[bool, str | None]:
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            if teacher_id is None:
+                cur.execute(
+                    "DELETE FROM observations WHERE id = ? AND teacher_id IS NULL",
+                    (obs_id,)
+                )
+            else:
+                cur.execute(
+                    "DELETE FROM observations WHERE id = ? AND teacher_id = ?",
+                    (obs_id, teacher_id)
+                )
+            if cur.rowcount == 0:
+                return False, "Aucune observation correspondante à supprimer."
+            conn.commit()
+            return True, None
+    except Exception as e:
+        return False, f"Suppression observation impossible: {e}"
+
 def save_observation_db(obs: dict, teacher_id: int | None) -> tuple[bool, str | None, int | None]:
     try:
         with get_conn() as conn:
@@ -518,6 +539,90 @@ if st.session_state.teacher:
         st.session_state.students = list_students_db(st.session_state.teacher["id"])
     except Exception:
         st.session_state.students = []
+
+# --- Gestion suppression via paramètres d'URL (trash dans sidebar) ---
+def _handle_delete_from_query_params():
+    try:
+        params = dict(st.query_params) if hasattr(st, "query_params") else st.experimental_get_query_params()
+    except Exception:
+        params = {}
+    del_id = None
+    del_idx = None
+    del_student_id = None
+    try:
+        if params:
+            if "del_obs" in params:
+                val = params.get("del_obs")
+                if isinstance(val, list):
+                    val = val[0] if val else None
+                if val is not None:
+                    del_id = int(val)
+            if "del_idx" in params:
+                val = params.get("del_idx")
+                if isinstance(val, list):
+                    val = val[0] if val else None
+                if val is not None:
+                    del_idx = int(val)
+            if "del_student" in params:
+                val = params.get("del_student")
+                if isinstance(val, list):
+                    val = val[0] if val else None
+                if val is not None:
+                    del_student_id = int(val)
+    except Exception:
+        pass
+    changed = False
+    if del_id is not None:
+        current_teacher_id = st.session_state.teacher["id"] if st.session_state.get("teacher") else None
+        ok_del, _err_del = delete_observation_db(del_id, current_teacher_id)
+        # Retirer de la session si présent
+        for j, o in enumerate(list(st.session_state.observations)):
+            if o.get("db_id") == del_id:
+                try:
+                    st.session_state.observations.pop(j)
+                except Exception:
+                    pass
+                break
+        changed = True
+    elif del_idx is not None:
+        # Suppression par index de session (fallback)
+        try:
+            if 0 <= del_idx < len(st.session_state.observations):
+                st.session_state.observations.pop(del_idx)
+                changed = True
+        except Exception:
+            pass
+    if del_student_id is not None and st.session_state.get("teacher"):
+        try:
+            ok_stu, _err_stu = delete_student_db(st.session_state.teacher["id"], del_student_id)
+            if ok_stu:
+                st.session_state.students = list_students_db(st.session_state.teacher["id"])
+                changed = True
+        except Exception:
+            pass
+    if changed:
+        # Nettoyer les paramètres
+        try:
+            if hasattr(st, "query_params"):
+                # Clear only our keys
+                qp = dict(st.query_params)
+                qp.pop("del_obs", None)
+                qp.pop("del_idx", None)
+                qp.pop("del_student", None)
+                st.experimental_set_query_params(**{k: v for k, v in qp.items()})
+            else:
+                st.experimental_set_query_params()
+        except Exception:
+            pass
+        try:
+            st.rerun()
+        except Exception:
+            try:
+                st.experimental_rerun()
+            except Exception:
+                pass
+
+_handle_delete_from_query_params()
 
 # --- Fonction pour réinitialiser tous les checkboxes ---
 def reset_all_checkboxes():
@@ -641,6 +746,22 @@ st.markdown(
     [data-testid="stSidebar"] > div {
         min-width: 380px !important;
         max-width: 380px !important;
+    }
+    /* Style des icônes poubelles (petites et rouges) */
+    .trash-btn {
+        color: #cc0000 !important;
+        font-size: 0.9rem !important;
+        text-decoration: none !important;
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        line-height: 1;
+    }
+    .trash-btn:hover {
+        color: #a00000 !important;
+        background-color: rgba(204,0,0,0.08);
+        border-color: rgba(204,0,0,0.15);
     }
     </style>
     """,
@@ -879,6 +1000,12 @@ for domaine, data in domaines.items():
                                     teacher_id = st.session_state.teacher["id"] if st.session_state.get("teacher") else None
                                     ok_db, err_db, _obs_id = save_observation_db(obs_entry, teacher_id)
                                     if ok_db:
+                                        # Conserver l'ID DB dans l'observation en session
+                                        obs_entry["db_id"] = _obs_id
+                                        try:
+                                            st.session_state.observations[-1]["db_id"] = _obs_id
+                                        except Exception:
+                                            pass
                                         st.toast("Observation enregistrée dans la base.", icon="✅")
                                     else:
                                         st.warning(err_db or "Impossible d'enregistrer l'observation dans la base.")
@@ -979,13 +1106,7 @@ with st.sidebar:
                     with c1:
                         st.write(s["name"])
                     with c2:
-                        if st.button("🗑️", key=f"del_student_{s['id']}"):
-                            ok, err = delete_student_db(t["id"], s["id"])
-                            if ok:
-                                st.session_state.students = list_students_db(t["id"])
-                                st.success("Supprimé.")
-                            else:
-                                st.error(err or "Suppression impossible.")
+                        st.markdown(f'<a class="trash-btn" href="?del_student={s["id"]}" title="Supprimer">🗑️</a>', unsafe_allow_html=True)
             else:
                 st.info("Aucun élève enregistré pour l'instant.")
         st.divider()
@@ -993,7 +1114,15 @@ with st.sidebar:
         if st.session_state.observations:
             for i, obs in enumerate(st.session_state.observations):
                 _title_appr = (obs.get('Apprentissage') or obs.get('Critère') or "")
-                with st.expander(f"Observation {i+1} - {_title_appr[:30]}..."):
+                row_left, row_right = st.columns([9, 1])
+                with row_left:
+                    expander = st.expander(f"Observation {i+1} - {_title_appr[:30]}...")
+                with row_right:
+                    if obs.get("db_id"):
+                        st.markdown(f'<a class="trash-btn" href="?del_obs={obs["db_id"]}" title="Supprimer">🗑️</a>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<a class="trash-btn" href="?del_idx={i}" title="Supprimer">🗑️</a>', unsafe_allow_html=True)
+                with expander:
                     st.markdown(f"**Domaine** : {obs['Domaine']}")
                     st.markdown(f"**Mode** : {obs['Mode']}")
                     st.markdown(f"**Observables** :")
