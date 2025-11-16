@@ -9,6 +9,47 @@ import hashlib
 import os
 import json
 from datetime import timedelta
+import locale
+
+# --- Fonction pour formater la date en français ---
+def format_timestamp_french(timestamp_str: str) -> str:
+    """
+    Convertit un timestamp au format 'YYYY-MM-DD HH:MM:SS' 
+    en format français 'Vendredi 2 novembre 16h57'
+    """
+    try:
+        # Définir la locale en français si disponible
+        try:
+            locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
+        except:
+            try:
+                locale.setlocale(locale.LC_TIME, 'fr_FR')
+            except:
+                try:
+                    locale.setlocale(locale.LC_TIME, 'French_France.1252')
+                except:
+                    pass  # Continuer avec la locale par défaut
+        
+        # Parser le timestamp
+        dt = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+        
+        # Obtenir le nom du jour en français
+        jour_semaine = dt.strftime("%A").capitalize()
+        
+        # Obtenir le jour du mois
+        jour = dt.day
+        
+        # Obtenir le mois en français
+        mois = dt.strftime("%B").lower()
+        
+        # Obtenir l'heure et les minutes
+        heure = dt.strftime("%Hh%M")
+        
+        # Construire le format final
+        return f"{jour_semaine} {jour} {mois} {heure}"
+    except:
+        # En cas d'erreur, retourner le timestamp original
+        return timestamp_str
 
 # --- PDF amélioré avec en-tête/pied-de-page et éléments graphiques ---
 class CustomPDF(FPDF):
@@ -1434,7 +1475,7 @@ with st.sidebar:
         if st.session_state.teacher:
             ts_list = get_observation_timestamps(st.session_state.teacher["id"])
             if ts_list:
-                opts = [f"{ts} ({cnt})" for ts, cnt in ts_list]
+                opts = [f"{format_timestamp_french(ts)} ({cnt})" for ts, cnt in ts_list]
                 vals = [ts for ts, _ in ts_list]
                 sel = st.selectbox("Charger des observations enregistrées (date/heure)", options=["—"] + opts, key="obs_load_select")
                 if sel and sel != "—":
