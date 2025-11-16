@@ -7,6 +7,7 @@ import base64
 import sqlite3
 import hashlib
 import os
+import json
 
 # --- PDF amélioré avec en-tête/pied-de-page et éléments graphiques ---
 class CustomPDF(FPDF):
@@ -369,6 +370,25 @@ def init_db():
                 FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
             );
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NULL,
+                domaine TEXT,
+                composante TEXT,
+                apprentissage TEXT,
+                mode TEXT,
+                observables_json TEXT,
+                commentaire TEXT,
+                activites_json TEXT,
+                competences_mobilisees_json TEXT,
+                processus_mobilises_json TEXT,
+                competence_mise_en_avant TEXT,
+                processus_mis_en_avant TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL
+            );
+        """)
         conn.commit()
 
 def _hash_password(password: str, salt_hex: str | None = None) -> tuple[str, str]:
@@ -448,6 +468,40 @@ def delete_student_db(teacher_id: int, student_id: int) -> tuple[bool, str | Non
         return True, None
     except Exception as e:
         return False, f"Suppression impossible: {e}"
+
+def save_observation_db(obs: dict, teacher_id: int | None) -> tuple[bool, str | None, int | None]:
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO observations (
+                    teacher_id, domaine, composante, apprentissage, mode,
+                    observables_json, commentaire, activites_json,
+                    competences_mobilisees_json, processus_mobilises_json,
+                    competence_mise_en_avant, processus_mis_en_avant
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    teacher_id,
+                    obs.get("Domaine"),
+                    obs.get("Composante"),
+                    obs.get("Apprentissage"),
+                    obs.get("Mode"),
+                    json.dumps(obs.get("Observables") or [], ensure_ascii=False),
+                    obs.get("Commentaire") or "",
+                    json.dumps(obs.get("Activités") or [], ensure_ascii=False),
+                    json.dumps(obs.get("Compétences_mobilisées") or [], ensure_ascii=False),
+                    json.dumps(obs.get("Processus_mobilisés") or [], ensure_ascii=False),
+                    obs.get("Compétence_mise_en_avant") or "",
+                    obs.get("Processus_mis_en_avant") or "",
+                ),
+            )
+            obs_id = cur.lastrowid
+            conn.commit()
+            return True, None, obs_id
+    except Exception as e:
+        return False, f"Erreur enregistrement observation: {e}", None
 
 # Créer la base au démarrage
 init_db()
@@ -821,6 +875,13 @@ for domaine, data in domaines.items():
                                     }
                                     st.session_state.observations.append(obs_entry)
                                     st.success("Observation enregistrée !")
+                                    # Sauvegarde en base
+                                    teacher_id = st.session_state.teacher["id"] if st.session_state.get("teacher") else None
+                                    ok_db, err_db, _obs_id = save_observation_db(obs_entry, teacher_id)
+                                    if ok_db:
+                                        st.toast("Observation enregistrée dans la base.", icon="✅")
+                                    else:
+                                        st.warning(err_db or "Impossible d'enregistrer l'observation dans la base.")
 
 # --- Sidebar dynamique ---
 with st.sidebar:
